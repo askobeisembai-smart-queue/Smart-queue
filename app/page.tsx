@@ -142,7 +142,7 @@ export default function SmartQueueUltimate() {
                 onClick={() => { setAuthStep(1); setShowAuthModal(true); }}
                 className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs uppercase tracking-wider px-4 py-2.5 rounded-xl transition-all flex items-center gap-2 shadow-lg shadow-indigo-600/20"
               >
-                <FiUserPlus /> Регистрация в Системе
+                <FiUserPlus /> Регистрация
               </button>
             )}
           </div>
@@ -275,7 +275,7 @@ export default function SmartQueueUltimate() {
               </div>
             </section>
 
-            {/* ГИГАНТСКИЙ БЛОК ГЕОЛОКАЦИИ И РЕГИСТРАЦИИ ОЧЕРЕДИ */}
+            {/* ГЕОЛОКАЦИЯ И РЕГИСТРАЦИЯ ОЧЕРЕДИ */}
             <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
               <div className="border-l-4 border-indigo-500 pl-4">
                 <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight flex items-center gap-3">
@@ -284,12 +284,14 @@ export default function SmartQueueUltimate() {
                 <p className="text-slate-400 text-xs mt-1">Определите ближайшую точку, выберите услугу и рассчитайте автоматический тариф.</p>
               </div>
 
-              <div className="grid lg:grid-cols-12 gap-8 items-stretch">
+              {/* Адаптивная сетка: grid-cols-1 на мобилках, lg:grid-cols-12 на ПК */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
                 
-                {/* Левая огромная панель: Сетка гео-локаций учреждений */}
-                <div className="lg:col-span-7 bg-slate-900/60 border border-indigo-500/10 rounded-2xl p-6 space-y-4 flex flex-col justify-between">
+                {/* Левая панель: Сетка гео-локаций учреждений */}
+                <div className="col-span-1 lg:col-span-7 bg-slate-900/60 border border-indigo-500/10 rounded-2xl p-6 space-y-4 flex flex-col justify-between">
                   <div>
-                    <div className="flex gap-1.5 overflow-x-auto pb-3 border-b border-slate-800">
+                    {/* Горизонтальный скролл табов на мобилках без поломок */}
+                    <div className="flex gap-1.5 overflow-x-auto pb-3 border-b border-slate-800 scrollbar-none">
                       {['Все', 'ЦОН', 'Банки', 'Медицина', 'Старт продаж iPhone'].map(cat => (
                         <button 
                           key={cat} 
@@ -301,7 +303,7 @@ export default function SmartQueueUltimate() {
                       ))}
                     </div>
 
-                    <div className="grid sm:grid-cols-2 gap-3 pt-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-4">
                       {ORGANIZATIONS.filter(o => selectedCategory === 'Все' || o.category === selectedCategory).map(org => (
                         <div 
                           key={org.id} 
@@ -324,15 +326,14 @@ export default function SmartQueueUltimate() {
                     </div>
                   </div>
 
-                  {/* Визуальная симуляция мини-карты */}
                   <div className="bg-slate-950 rounded-xl p-3 border border-slate-800 text-center text-[11px] text-slate-500 flex items-center justify-center gap-2 mt-4">
                     <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
-                    Гео-локация: <b>Алматы, Медеуский район</b> (Автоматический поиск в радиусе 5 км)
+                    Гео-локация: <b>Алматы</b> (Автоматический поиск в радиусе 5 км)
                   </div>
                 </div>
 
                 {/* Правая панель: Специфика, Динамический биллинг и кнопка брони */}
-                <div className="lg:col-span-5 bg-gradient-to-b from-slate-900/80 to-[#15112B] border border-purple-500/10 rounded-2xl p-6 flex flex-col justify-between space-y-6">
+                <div className="col-span-1 lg:col-span-5 bg-gradient-to-b from-slate-900/80 to-[#15112B] border border-purple-500/10 rounded-2xl p-6 flex flex-col justify-between space-y-6">
                   
                   <div className="space-y-4">
                     <h3 className="text-xs font-black text-purple-300 uppercase tracking-widest flex items-center gap-2"><FiSliders /> Настройка параметров талона</h3>
@@ -388,7 +389,7 @@ export default function SmartQueueUltimate() {
             </section>
 
             {/* БЛОК СВЯЗИ */}
-            <section className="max-w-md mx-auto text-center space-y-3">
+            <section className="max-w-md mx-auto text-center space-y-3 px-4">
               <h4 className="text-xs font-bold uppercase text-slate-400 tracking-widest">Официальные шлюзы граждан</h4>
               <div className="flex gap-2 justify-center">
                 <a href="https://wa.me/77071234567" target="_blank" rel="noreferrer" className="flex items-center gap-2 px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs font-bold text-emerald-400"><FiMessageSquare /> WhatsApp</a>
@@ -402,7 +403,7 @@ export default function SmartQueueUltimate() {
         {/* РАЗДЕЛ: ЦИФРОВОЙ КОШЕЛЕК ТАЛОНОВ */}
         {activeTab === 'profile' && (
           <div className="max-w-xl mx-auto py-12 px-4 space-y-6 animate-scale-up">
-            <h2 className="text-xl font-black text-white text-center">Ваш криптографический реестр билетов</h2>
+            <h2 className="text-xl font-black text-white text-center">Ваш реестр билетов</h2>
             {myTickets.length === 0 ? (
               <p className="text-slate-500 text-xs text-center py-12 bg-slate-900/40 border border-dashed border-slate-800 rounded-2xl">Активных электронных билетов не найдено.</p>
             ) : (
@@ -420,7 +421,7 @@ export default function SmartQueueUltimate() {
                       <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider block">Номер вашей очереди</span>
                       <div className="text-4xl font-mono font-black text-white my-2 bg-slate-950 py-2 px-6 rounded-xl border border-slate-800 inline-block tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-cyan-400">{ticket.number}</div>
                       {ticket.peopleAhead > 0 ? (
-                        <p className="text-xs text-slate-400 mt-2">Перед вами: <b className="text-purple-400">{ticket.peopleAhead} чел.</b> | Будьте на месте через ~<b>{ticket.estimatedTime} мин</b></p>
+                        <p className="text-xs text-slate-400 mt-2">Перед вами: <b className="text-purple-400">{ticket.peopleAhead} чел.</b> | Будьте на месте через ~<b>{ticket.estimatedTime} min</b></p>
                       ) : (
                         <p className="text-xs text-emerald-400 font-bold bg-emerald-950/40 p-2 rounded-xl mt-2 animate-pulse">Ваш черед! Пройдите к нужному окну.</p>
                       )}
@@ -474,7 +475,7 @@ export default function SmartQueueUltimate() {
               <>
                 <div className="text-center space-y-1">
                   <h3 className="text-lg font-black text-white flex items-center justify-center gap-2"><FiLock className="text-indigo-400" /> Регистрация в шлюзе SmartQueue</h3>
-                  <p className="text-slate-400 text-xs">Для бронирования места введите ваши официальные данные РК.</p>
+                  <p className="text-slate-400 text-xs">Для бронирования места введите ваши данные.</p>
                 </div>
 
                 <form onSubmit={handleRegisterSubmit} className="space-y-3.5">
@@ -487,70 +488,45 @@ export default function SmartQueueUltimate() {
                       placeholder="020405500123" 
                       value={regIin}
                       onChange={e => setRegIin(e.target.value.replace(/\D/g, ''))}
-                      className="w-full bg-slate-950 border border-slate-800 p-3 rounded-xl text-xs font-mono font-bold text-white focus:outline-none focus:border-indigo-500 transition-colors" 
+                      className="w-full bg-slate-950 border border-slate-800 p-3 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500"
                     />
                   </div>
-
                   <div>
-                    <label className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider mb-1">Полное ФИО</label>
+                    <label className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider mb-1">ФИО</label>
                     <input 
                       type="text" 
                       required 
-                      placeholder="Бейсембай Асылжан" 
+                      placeholder="Асылжан Кобейсембай" 
                       value={regName}
                       onChange={e => setRegName(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 p-3 rounded-xl text-xs font-bold text-white focus:outline-none focus:border-indigo-500 transition-colors" 
+                      className="w-full bg-slate-950 border border-slate-800 p-3 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500"
                     />
                   </div>
-
                   <div>
                     <label className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider mb-1">Номер телефона</label>
                     <input 
-                      type="tel" 
+                      type="text" 
                       required 
                       placeholder="+7 (707) 123-4567" 
                       value={regPhone}
                       onChange={e => setRegPhone(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 p-3 rounded-xl text-xs font-bold text-white focus:outline-none focus:border-indigo-500 transition-colors" 
+                      className="w-full bg-slate-950 border border-slate-800 p-3 rounded-xl text-xs text-white focus:outline-none focus:border-indigo-500"
                     />
                   </div>
-
-                  <div className="flex gap-2 pt-2">
-                    <button 
-                      type="button" 
-                      onClick={() => setShowAuthModal(false)}
-                      className="w-1/3 bg-slate-900 hover:bg-slate-800 text-slate-400 font-bold text-xs uppercase tracking-wider py-3 rounded-xl transition-all"
-                    >
-                      Отмена
-                    </button>
-                    <button 
-                      type="submit" 
-                      className="w-2/3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:opacity-90 text-white font-black text-xs uppercase tracking-wider py-3 rounded-xl transition-all"
-                    >
-                      Подтвердить данные
-                    </button>
-                  </div>
+                  <button type="submit" className="w-full bg-indigo-600 text-white font-bold p-3 rounded-xl text-xs uppercase tracking-wider mt-2">
+                    Верифицировать профиль
+                  </button>
                 </form>
               </>
             ) : (
-              /* ШАГ 2: КРАСИВАЯ АНИМАЦИЯ ПРОВЕРКИ */
               <div className="py-12 text-center space-y-4">
-                <div className="w-16 h-16 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full mx-auto animate-spin"></div>
-                <div className="space-y-1">
-                  <h4 className="text-sm font-black text-white">Криптографическая верификация личности...</h4>
-                  <p className="text-slate-400 text-[11px] animate-pulse">Сверяем ИИН {regIin} с базами данных NITEC РК</p>
-                </div>
+                <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+                <p className="text-xs text-slate-400 font-mono">Проверка подлинности ИИН по базам данных гос. шлюзов...</p>
               </div>
             )}
-
           </div>
         </div>
       )}
-
-      {/* ФУТЕР */}
-      <footer className="bg-slate-950/80 border-t border-indigo-500/10 py-6 text-center text-[10px] text-slate-500 font-medium">
-        &copy; 2026 АО «Национальные информационные технологии». Единая база шлюзов SmartQueue РК.
-      </footer>
 
     </div>
   )
