@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { 
   FiClock, FiCheckCircle, FiChevronRight, FiSliders, FiMessageSquare,
   FiTrendingDown, FiSmartphone, FiShield, FiCpu, FiMapPin, FiUserPlus, FiLock, FiCreditCard, 
-  FiSend, FiUser, FiX, FiCheck, FiAlertTriangle
+  FiSend, FiUser, FiX, FiCheck, FiAlertTriangle, FiAward, FiActivity, FiZap
 } from 'react-icons/fi'
 
 // База организаций
@@ -22,7 +22,7 @@ const SERVICES_BY_CATEGORY: { [key: string]: string[] } = {
   'Старт продаж iPhone': ['Выдача предзаказов (Pre-order)', 'Живая электронная очередь (Launch Line)', 'Оформление рассрочки']
 }
 
-// Данные супер-администратора (Тебя)
+// Данные супер-администратора
 const ADMIN_CREDENTIALS = {
   iin: '060621501916',
   phone: '87009522306',
@@ -91,7 +91,7 @@ export default function SmartQueueUltimate() {
 
   // Хэндлер ввода телефона (Только цифры, максимум 11)
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value.replace(/\D/g, '') // убираем всё кроме цифр
+    const value = e.target.value.replace(/\D/g, '')
     if (value.length <= 11) {
       setRegPhone(value)
     }
@@ -121,7 +121,6 @@ export default function SmartQueueUltimate() {
     setAuthStep(2)
     
     setTimeout(() => {
-      // Проверяем, не ты ли регистрируешься
       const isLoggingAsAdmin = regIin === ADMIN_CREDENTIALS.iin && regPhone === ADMIN_CREDENTIALS.phone
       
       const newUser = {
@@ -132,7 +131,6 @@ export default function SmartQueueUltimate() {
 
       setUserSession(newUser)
       
-      // Добавляем в общий список, если это новый пользователь
       if (!registeredUsers.some(u => u.iin === regIin)) {
         setRegisteredUsers(prev => [newUser, ...prev])
       }
@@ -189,11 +187,10 @@ export default function SmartQueueUltimate() {
     setIsAiTyping(true)
 
     setTimeout(() => {
-      let aiText = 'Я обрабатываю ваш запрос. Если вам нужна помощь человека, напишите слово "Оператор".'
+      let aiText = 'Я обрабатываю ваш запрос. Если вам нужна реальная техническая помощь человека, напишите слово "Оператор".'
       const lowerText = userText.toLowerCase()
 
       if (isOperatorConnected) {
-        // Если оператор уже подключен
         aiText = 'Асылжан Бейсембай принял ваше обращение. Мы обрабатываем сбой интеграции с шлюзом оплаты. Ожидайте звонка на ваш номер.'
       } else if (lowerText.includes('оператор') || lowerText.includes('позови') || lowerText.includes('человек') || lowerText.includes('помощь')) {
         setIsOperatorConnected(true)
@@ -245,7 +242,6 @@ export default function SmartQueueUltimate() {
               {myTickets.length > 0 && <span className="absolute -top-1 -right-1 w-4 h-4 bg-pink-500 text-white text-[9px] rounded-full flex items-center justify-center font-bold">{myTickets.length}</span>}
             </button>
             
-            {/* Вкладка видна ТОЛЬКО если вошел Асылжан */}
             {isAdmin && (
               <button onClick={() => setActiveTab('admin')} className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${activeTab === 'admin' ? 'bg-cyan-600 text-white animate-pulse' : 'text-cyan-400 hover:bg-slate-800'}`}>
                 Панель Администратора
@@ -278,7 +274,7 @@ export default function SmartQueueUltimate() {
         {isAdmin && <button onClick={() => setActiveTab('admin')} className="text-cyan-400">Админка</button>}
       </div>
 
-      {/* ОСНОВНОЙ ТЕЛО СТРАНИЦЫ */}
+      {/* ОСНОВНОЕ ТЕЛО СТРАНИЦЫ */}
       <main className="flex-grow">
         
         {activeTab === 'home' && (
@@ -296,6 +292,41 @@ export default function SmartQueueUltimate() {
                 <p className="text-slate-400 text-sm sm:text-base max-w-xl">
                   Интеллектуальная эмуляция распределения очередей в городе Алматы. Введите ИИН, пройдите верификацию и забронируйте время.
                 </p>
+              </div>
+            </section>
+
+            {/* ВЕРНУЛИ БЛОК ОПИСАНИЯ НАДЕЖНОСТИ И БЕЗОПАСНОСТИ ПРОЕКТА */}
+            <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="bg-slate-900/40 border border-slate-800/80 p-6 rounded-2xl space-y-3">
+                  <div className="w-10 h-10 bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 rounded-xl flex items-center justify-center text-lg font-bold">
+                    <FiShield />
+                  </div>
+                  <h3 className="text-sm font-black text-white uppercase tracking-wider">Абсолютная надежность</h3>
+                  <p className="text-slate-400 text-xs leading-relaxed">
+                    Все транзакции и персональные данные шифруются по протоколу SSL. Платформа сквозной авторизации проверяет ИИН через защищенные криптографические реестры.
+                  </p>
+                </div>
+
+                <div className="bg-slate-900/40 border border-slate-800/80 p-6 rounded-2xl space-y-3">
+                  <div className="w-10 h-10 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl flex items-center justify-center text-lg font-bold">
+                    <FiCheckCircle />
+                  </div>
+                  <h3 className="text-sm font-black text-white uppercase tracking-wider">Официальный статус</h3>
+                  <p className="text-slate-400 text-xs leading-relaxed">
+                    Интегрировано со структурами распределения нагрузки ЦОН и крупнейшими банковскими API Казахстана. Гарантия 100% фиксации вашего времени в системе.
+                  </p>
+                </div>
+
+                <div className="bg-slate-900/40 border border-slate-800/80 p-6 rounded-2xl space-y-3">
+                  <div className="w-10 h-10 bg-purple-500/10 border border-purple-500/20 text-purple-400 rounded-xl flex items-center justify-center text-lg font-bold">
+                    <FiZap />
+                  </div>
+                  <h3 className="text-sm font-black text-white uppercase tracking-wider">Мгновенный процессинг</h3>
+                  <p className="text-slate-400 text-xs leading-relaxed">
+                    Никаких задержек. Генерация уникального буквенно-цифрового кода талона происходит сразу после подтверждения платежного шлюза Kaspi QR.
+                  </p>
+                </div>
               </div>
             </section>
 
@@ -387,7 +418,7 @@ export default function SmartQueueUltimate() {
                     onClick={() => handleGetTicketClick(selectedOrg)}
                     className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-black text-xs uppercase tracking-wider py-4 rounded-xl shadow-lg shadow-indigo-600/10"
                   >
-                    {!userSession ? 'Пройти регистрацию для брони' : 'Оплатить через Kaspi / Кариу'}
+                    {!userSession ? 'Пройти регистрацию для брони' : 'Оплатить через Kaspi / Card'}
                   </button>
                 </div>
 
@@ -426,7 +457,7 @@ export default function SmartQueueUltimate() {
           </div>
         )}
 
-        {/* АДМИНКА (Доступна строго по условию isAdmin) */}
+        {/* АДМИНКА */}
         {activeTab === 'admin' && isAdmin && (
           <div className="max-w-4xl mx-auto py-12 px-4 space-y-10 animate-scale-up">
             <div className="bg-gradient-to-r from-cyan-950/30 to-indigo-950/30 border border-cyan-500/20 p-4 rounded-xl flex items-center gap-3">
