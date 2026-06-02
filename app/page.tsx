@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { 
   FiClock, FiCheckCircle, FiChevronRight, FiSliders, FiMessageSquare,
   FiTrendingDown, FiSmartphone, FiShield, FiCpu, FiMapPin, FiUserPlus, FiLock, FiCreditCard, 
-  FiSend, FiUser, FiX, FiCheck, FiAlertTriangle, FiAward, FiActivity, FiZap, FiLogOut, FiPhone, FiMail, FiCalendar
+  FiSend, FiUser, FiX, FiCheck, FiAlertTriangle, FiAward, FiActivity, FiZap, FiLogOut, FiPhone, FiMail, FiCalendar, FiMenu
 } from 'react-icons/fi'
 
 // База организаций
@@ -25,7 +25,7 @@ const SERVICES_BY_CATEGORY: { [key: string]: string[] } = {
 // Данные супер-администратора (Владельца)
 const ADMIN_CREDENTIALS = {
   iin: '060621501916',
-  phone: '87009522306',
+  password: '1234112341',
   name: 'Асылжан Бейсембай'
 }
 
@@ -35,6 +35,13 @@ export default function SmartQueueUltimate() {
   const [selectedOrg, setSelectedOrg] = useState<any>(ORGANIZATIONS[0])
   const [windowType, setWindowType] = useState(SERVICES_BY_CATEGORY['ЦОН'][0])
   const [myTickets, setMyTickets] = useState<any[]>([])
+  
+  // Состояния для Бургер-меню
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+
+  // Глобальные настройки админки (Управление состоянием сайта)
+  const [isSystemActive, setIsSystemActive] = useState(true)
+  const [systemLogs, setSystemLogs] = useState<string[]>(['Система инициализирована', 'Шлюз Алматы активен'])
 
   // База пользователей для админки
   const [registeredUsers, setRegisteredUsers] = useState<any[]>([
@@ -47,10 +54,11 @@ export default function SmartQueueUltimate() {
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [authStep, setAuthStep] = useState(1) 
   
-  // Поля формы с контролируемым вводом
+  // Поля формы регистрации / входа
   const [regIin, setRegIin] = useState('')
   const [regName, setRegName] = useState('')
-  const [regPhone, setRegPhone] = useState('')
+  const [regPhone, setRegPhone] = useState('') // Хранит только чистые цифры
+  const [regPassword, setRegPassword] = useState('') // Поле пароля для админа
 
   // Платежи
   const [showPaymentModal, setShowPaymentModal] = useState(false)
@@ -69,8 +77,8 @@ export default function SmartQueueUltimate() {
   const [isAiTyping, setIsAiTyping] = useState(false)
   const [isOperatorConnected, setIsOperatorConnected] = useState(false)
 
-  // Жесткая проверка: доступ к админ-панели есть ТОЛЬКО у Асылжана
-  const isAdmin = userSession?.iin === ADMIN_CREDENTIALS.iin && userSession?.phone?.replace(/\D/g, '') === ADMIN_CREDENTIALS.phone
+  // Жесткая проверка: доступ к админ-панели есть ТОЛЬКО у Асылжана по ИИН + Паролю
+  const isAdmin = userSession?.iin === ADMIN_CREDENTIALS.iin && userSession?.isAdmin === true
 
   const calculatePrice = (minutes: number) => {
     return 1000 + (minutes * 50)
@@ -82,27 +90,55 @@ export default function SmartQueueUltimate() {
     }
   }, [selectedOrg])
 
+  // Функция форматирования номера телефона для вывода внутри инпута (Маска)
+  const getMaskedPhone = (rawDigits: string) => {
+    if (!rawDigits) return '+7 ('
+    const digits = rawDigits.replace(/\D/g, '')
+    
+    // Если пользователь стирает всё, оставляем префикс
+    let result = '+7 ('
+    if (digits.length > 1) {
+      result += digits.slice(1, 4)
+    }
+    if (digits.length >= 5) {
+      result += ') ' + digits.slice(4, 7)
+    }
+    if (digits.length >= 8) {
+      result += '-' + digits.slice(7, 9)
+    }
+    if (digits.length >= 10) {
+      result += '-' + digits.slice(9, 11)
+    }
+    return result
+  }
+
+  // Обработчик изменения ввода телефона с маской
+  const handlePhoneInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const inputVal = e.target.value
+    
+    // Получаем только чистые цифры из введенного текста
+    let digits = inputVal.replace(/\D/g, '')
+    
+    // Корректируем, если пользователь пытается стереть или изменить первую семерку
+    if (digits.length === 0) {
+      setRegPhone('')
+      return
+    }
+    
+    if (!digits.startsWith('7') && digits.length > 0) {
+      digits = '7' + digits
+    }
+
+    if (digits.length <= 11) {
+      setRegPhone(digits)
+    }
+  }
+
   // Хэндлер ввода имени (Только Буквы и Пробелы)
   const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value
     const onlyLetters = value.replace(/[^a-zA-Zа-яА-ЯёЁәӘғҒқҚңҢөӨұҰүҮіІһҺ\s]/g, '')
     setRegName(onlyLetters)
-  }
-
-  // Хэндлер ввода телефона
-  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value.replace(/\D/g, '')
-    if (value.length <= 11) {
-      setRegPhone(value)
-    }
-  }
-
-  const formatPhoneNumber = (digits: string) => {
-    if (!digits) return ''
-    if (digits.length <= 1) return `+7`
-    if (digits.length <= 4) return `+7 (${digits.slice(1)}`
-    if (digits.length <= 7) return `+7 (${digits.slice(1, 4)}) ${digits.slice(4)}`
-    return `+7 (${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7, 11)}`
   }
 
   const handleRegisterSubmit = (e: React.FormEvent) => {
@@ -112,19 +148,25 @@ export default function SmartQueueUltimate() {
       return
     }
     if (regPhone.length < 11) {
-      alert('Ошибка: Неверный формат номера телефона!')
+      alert('Ошибка: Заполните номер телефона полностью!')
+      return
+    }
+
+    // Логика проверки на Администратора
+    const isLoggingAsAdmin = regIin === ADMIN_CREDENTIALS.iin
+    if (isLoggingAsAdmin && regPassword !== ADMIN_CREDENTIALS.password) {
+      alert('Ошибка: Обнаружен ИИН администратора, но введен неверный секретный пароль!')
       return
     }
 
     setAuthStep(2)
     
     setTimeout(() => {
-      const isLoggingAsAdmin = regIin === ADMIN_CREDENTIALS.iin && regPhone === ADMIN_CREDENTIALS.phone
-      
       const newUser = {
         name: isLoggingAsAdmin ? ADMIN_CREDENTIALS.name : regName,
         iin: regIin,
-        phone: regPhone
+        phone: regPhone,
+        isAdmin: isLoggingAsAdmin
       }
 
       setUserSession(newUser)
@@ -135,6 +177,7 @@ export default function SmartQueueUltimate() {
 
       setShowAuthModal(false)
       setAuthStep(1)
+      setRegPassword('')
     }, 1500)
   }
 
@@ -143,10 +186,15 @@ export default function SmartQueueUltimate() {
     setRegIin('')
     setRegName('')
     setRegPhone('')
+    setRegPassword('')
     setActiveTab('home')
   }
 
   const handleGetTicketClick = (org: any) => {
+    if (!isSystemActive) {
+      alert('Внимание: Прием заявок временно приостановлен администратором системы.')
+      return
+    }
     if (!userSession) {
       setShowAuthModal(true)
       return
@@ -178,6 +226,10 @@ export default function SmartQueueUltimate() {
       setCardNumber('')
       setCardExpiry('')
       setCardCvc('')
+      
+      // Добавляем запись в логи для админки
+      setSystemLogs(prev => [`Эмиссия талона ${ticketNumber} для ИИН ${userSession.iin}`, ...prev])
+      
       setActiveTab('profile')
     }, 2000)
   }
@@ -209,6 +261,30 @@ export default function SmartQueueUltimate() {
     }, 1100)
   }
 
+  // Функциональные действия кнопок админ-панели
+  const toggleSystemStatus = () => {
+    setIsSystemActive(!isSystemActive)
+    setSystemLogs(prev => [`Статус шлюза изменен на: ${!isSystemActive ? 'АКТИВЕН' : 'ЗАБЛОКИРОВАН'}`, ...prev])
+  }
+
+  const clearAllTickets = () => {
+    if(confirm('Вы действительно хотите обнулить все активные талоны в системе?')) {
+      setMyTickets([])
+      setSystemLogs(prev => ['База активных талонов полностью очищена администратором', ...prev])
+      alert('Все талоны успешно удалены из базы данных.')
+    }
+  }
+
+  const triggerMockError = () => {
+    setSystemLogs(prev => ['⚠️ Имитация критического сбоя API Kaspi... Автоматическое восстановление шлюза.', ...prev])
+    alert('Симуляция запущена. Система успешно перенаправила трафик на резервный сервер Алматы.')
+  }
+
+  const downloadRegistryLogs = () => {
+    setSystemLogs(prev => ['Выгрузка логов безопасности осуществлена в файл формата .log', ...prev])
+    alert('Логи успешно сформированы и отправлены на ваш защищенный терминал.')
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#0B0F19] via-[#111827] to-[#1A102F] text-slate-100 flex flex-col justify-between antialiased relative">
       
@@ -223,10 +299,10 @@ export default function SmartQueueUltimate() {
         .scrollbar-none { -ms-overflow-style: none; scrollbar-width: none; }
       `}</style>
 
-      {/* ХЕДЕР С НОВЫМИ МЕНЮШКАМИ */}
+      {/* ХЕДЕР С ДЕСКТОПНЫМ МЕНЮ И КНОПКОЙ БУРГЕРА */}
       <header className="sticky top-0 z-40 bg-[#0B0F19]/80 border-b border-indigo-500/10 backdrop-blur-xl">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
-          <div className="flex items-center gap-3 cursor-pointer" onClick={() => setActiveTab('home')}>
+          <div className="flex items-center gap-3 cursor-pointer" onClick={() => { setActiveTab('home'); setIsMobileMenuOpen(false); }}>
             <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center text-white font-black text-lg">SQ</div>
             <div>
               <span className="text-xl font-black tracking-tight text-white block">SmartQueue</span>
@@ -234,6 +310,7 @@ export default function SmartQueueUltimate() {
             </div>
           </div>
           
+          {/* Навигация для Десктопа (hidden на мобильных) */}
           <nav className="hidden md:flex items-center gap-1 bg-slate-900/60 p-1 rounded-xl border border-slate-800/80">
             <button onClick={() => setActiveTab('home')} className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${activeTab === 'home' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}>Главная</button>
             <button onClick={() => setActiveTab('about')} className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${activeTab === 'about' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}>О нас / История</button>
@@ -243,7 +320,7 @@ export default function SmartQueueUltimate() {
               {myTickets.length > 0 && <span className="absolute -top-1 -right-1 w-4 h-4 bg-pink-500 text-white text-[9px] rounded-full flex items-center justify-center font-bold">{myTickets.length}</span>}
             </button>
             
-            {/* Доступ строго для Асылжана */}
+            {/* Доступ строго для вас (Асылжана) */}
             {userSession && isAdmin && (
               <button onClick={() => setActiveTab('admin')} className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${activeTab === 'admin' ? 'bg-cyan-600 text-white animate-pulse' : 'text-cyan-400 hover:bg-slate-800'}`}>
                 Панель Администратора
@@ -251,7 +328,7 @@ export default function SmartQueueUltimate() {
             )}
           </nav>
 
-          <div className="flex items-center gap-3">
+          <div className="hidden md:flex items-center gap-3">
             {userSession ? (
               <div className="flex items-center gap-3 bg-indigo-950/40 border border-indigo-500/30 px-4 py-2 rounded-xl">
                 <div className="text-xs font-mono text-right">
@@ -275,16 +352,100 @@ export default function SmartQueueUltimate() {
               </button>
             )}
           </div>
+
+          {/* Кнопка открытия мобильного бургер-меню */}
+          <div className="flex items-center md:hidden">
+            <button 
+              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} 
+              className="text-slate-400 hover:text-white p-2 bg-slate-900 rounded-xl border border-slate-800"
+            >
+              <FiMenu className="w-6 h-6" />
+            </button>
+          </div>
         </div>
       </header>
 
-      {/* МОБИЛЬНОЕ МЕНЮ */}
-      <div className="md:hidden bg-slate-950 border-b border-slate-900 flex justify-around p-2 text-[10px] font-bold uppercase sticky top-20 z-30 overflow-x-auto">
-        <button onClick={() => setActiveTab('home')} className={activeTab === 'home' ? 'text-indigo-400' : 'text-slate-400'}>Главная</button>
-        <button onClick={() => setActiveTab('about')} className={activeTab === 'about' ? 'text-indigo-400' : 'text-slate-400'}>О нас</button>
-        <button onClick={() => setActiveTab('contacts')} className={activeTab === 'contacts' ? 'text-indigo-400' : 'text-slate-400'}>Контакты</button>
-        <button onClick={() => setActiveTab('profile')} className={activeTab === 'profile' ? 'text-indigo-400' : 'text-slate-400'}>Талоны ({myTickets.length})</button>
-      </div>
+      {/* МОБИЛЬНОЕ ПОЛНОЭКРАННОЕ БУРГЕР-МЕНЮ */}
+      {isMobileMenuOpen && (
+        <div className="fixed inset-0 z-50 bg-[#0B0F19] flex flex-col justify-between p-6 md:hidden animate-scale-up">
+          <div className="space-y-8">
+            <div className="flex items-center justify-between pb-6 border-b border-slate-900">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white font-black text-sm">SQ</div>
+                <span className="text-base font-black text-white">Навигация</span>
+              </div>
+              <button 
+                onClick={() => setIsMobileMenuOpen(false)} 
+                className="text-slate-400 hover:text-white p-2 bg-slate-900 rounded-lg"
+              >
+                <FiX className="w-5 h-5" />
+              </button>
+            </div>
+
+            <nav className="flex flex-col gap-3">
+              <button 
+                onClick={() => { setActiveTab('home'); setIsMobileMenuOpen(false); }} 
+                className={`w-full p-4 rounded-xl text-left text-sm font-bold uppercase tracking-wider transition-all ${activeTab === 'home' ? 'bg-indigo-600 text-white' : 'bg-slate-900/50 text-slate-400'}`}
+              >
+                Главная страница
+              </button>
+              <button 
+                onClick={() => { setActiveTab('about'); setIsMobileMenuOpen(false); }} 
+                className={`w-full p-4 rounded-xl text-left text-sm font-bold uppercase tracking-wider transition-all ${activeTab === 'about' ? 'bg-indigo-600 text-white' : 'bg-slate-900/50 text-slate-400'}`}
+              >
+                О нас / История основателя
+              </button>
+              <button 
+                onClick={() => { setActiveTab('contacts'); setIsMobileMenuOpen(false); }} 
+                className={`w-full p-4 rounded-xl text-left text-sm font-bold uppercase tracking-wider transition-all ${activeTab === 'contacts' ? 'bg-indigo-600 text-white' : 'bg-slate-900/50 text-slate-400'}`}
+              >
+                Контакты компании
+              </button>
+              <button 
+                onClick={() => { setActiveTab('profile'); setIsMobileMenuOpen(false); }} 
+                className={`w-full p-4 rounded-xl text-left text-sm font-bold uppercase tracking-wider transition-all relative ${activeTab === 'profile' ? 'bg-indigo-600 text-white' : 'bg-slate-900/50 text-slate-400'}`}
+              >
+                Мои Выданные Талоны
+                {myTickets.length > 0 && <span className="ml-2 bg-pink-500 text-white text-[10px] px-2 py-0.5 rounded-full font-bold">{myTickets.length}</span>}
+              </button>
+
+              {userSession && isAdmin && (
+                <button 
+                  onClick={() => { setActiveTab('admin'); setIsMobileMenuOpen(false); }} 
+                  className={`w-full p-4 rounded-xl text-left text-sm font-bold uppercase tracking-wider transition-all ${activeTab === 'admin' ? 'bg-cyan-600 text-white border border-cyan-400/40' : 'bg-cyan-950/20 text-cyan-400 border border-cyan-900/50'}`}
+                >
+                  👑 Панель Администратора
+                </button>
+              )}
+            </nav>
+          </div>
+
+          <div className="pt-6 border-t border-slate-900">
+            {userSession ? (
+              <div className="space-y-3">
+                <div className="p-4 bg-slate-900 rounded-xl border border-slate-800">
+                  <span className="text-[10px] text-slate-500 block uppercase font-bold">Вы вошли как:</span>
+                  <span className="text-white font-bold text-sm block">{userSession.name}</span>
+                  <span className="text-indigo-400 font-mono text-xs block mt-0.5">ИИН: {userSession.iin}</span>
+                </div>
+                <button 
+                  onClick={() => { handleLogout(); setIsMobileMenuOpen(false); }}
+                  className="w-full bg-rose-600 hover:bg-rose-700 text-white font-bold py-3.5 rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2"
+                >
+                  <FiLogOut /> Выйти из аккаунта
+                </button>
+              </div>
+            ) : (
+              <button 
+                onClick={() => { setIsMobileMenuOpen(false); setAuthStep(1); setShowAuthModal(true); }}
+                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 rounded-xl text-xs uppercase tracking-wider flex items-center justify-center gap-2"
+              >
+                <FiUserPlus /> Пройти регистрацию
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ОСНОВНОЙ КОНТЕНТ */}
       <main className="flex-grow">
@@ -295,6 +456,11 @@ export default function SmartQueueUltimate() {
             {/* БАННЕР С АНИМАЦИЕЙ ЧЕЛОВЕКА В ОЧЕРЕДИ */}
             <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-12 grid lg:grid-cols-12 gap-12 items-center">
               <div className="lg:col-span-7 space-y-6">
+                {!isSystemActive && (
+                  <div className="inline-flex items-center gap-2 bg-rose-500/20 border border-rose-500/30 px-4 py-2 rounded-xl text-rose-300 text-xs font-bold uppercase tracking-wider animate-pulse">
+                    <FiAlertTriangle /> Прием новых броней временно заблокирован админом
+                  </div>
+                )}
                 <div className="inline-flex items-center gap-2 bg-gradient-to-r from-indigo-500/20 to-purple-500/20 border border-indigo-500/30 px-3 py-1 rounded-full text-indigo-300 text-xs font-semibold uppercase tracking-wider">
                   🚀 Безопасный цифровой шлюз распределения времени
                 </div>
@@ -391,7 +557,6 @@ export default function SmartQueueUltimate() {
                 <div className="col-span-1 lg:col-span-6 bg-slate-950 border border-slate-800 rounded-2xl p-4 relative overflow-hidden flex flex-col justify-between min-h-[350px]">
                   <div className="absolute inset-0 bg-[linear-gradient(to_right,#1e293b_1px,transparent_1px),linear-gradient(to_bottom,#1e293b_1px,transparent_1px)] bg-[size:30px_30px] opacity-20"></div>
                   
-                  {/* Городские очертания контуров (Сетка) */}
                   <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 to-purple-500/5"></div>
 
                   <div className="relative z-10 flex justify-between items-center bg-slate-900/80 backdrop-blur-sm p-3 rounded-xl border border-slate-800">
@@ -414,13 +579,11 @@ export default function SmartQueueUltimate() {
                           onClick={() => setSelectedOrg(org)}
                           className={`relative group cursor-pointer flex items-center justify-center w-4 h-4 rounded-full transition-all ${selectedOrg?.id === org.id ? 'bg-purple-500 scale-125 z-20' : 'bg-slate-700 hover:bg-indigo-500'}`}
                         >
-                          {/* Пульсирующий круг вокруг выбранной организации */}
                           {selectedOrg?.id === org.id && (
                             <div className="absolute w-10 h-10 border border-purple-500 rounded-full animate-pulse-ring"></div>
                           )}
                           <FiMapPin className="w-2.5 h-2.5 text-white" />
                           
-                          {/* Всплывающая подсказка при наведении */}
                           <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 border border-slate-800 text-[9px] text-slate-200 px-2 py-1 rounded-md whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-30 font-bold">
                             {org.name} ({org.distance})
                           </div>
@@ -475,9 +638,9 @@ export default function SmartQueueUltimate() {
 
                   <button 
                     onClick={() => handleGetTicketClick(selectedOrg)}
-                    className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-black text-xs uppercase tracking-wider py-4 rounded-xl shadow-xl shadow-indigo-600/20 hover:from-indigo-500 hover:to-purple-500 transition-all"
+                    className={`w-full text-white font-black text-xs uppercase tracking-wider py-4 rounded-xl shadow-xl transition-all ${!isSystemActive ? 'bg-slate-800 border border-slate-700 text-slate-500 cursor-not-allowed' : 'bg-gradient-to-r from-indigo-600 to-purple-600 shadow-indigo-600/20 hover:from-indigo-500 hover:to-purple-500'}`}
                   >
-                    {!userSession ? 'Пройти верификацию для брони' : 'Оплатить бронирование'}
+                    {!isSystemActive ? 'Сервер заблокирован админом' : !userSession ? 'Пройти верификацию для брони' : 'Оплатить бронирование'}
                   </button>
                 </div>
               </div>
@@ -486,7 +649,7 @@ export default function SmartQueueUltimate() {
             {/* 3 ПРИЧИНЫ ПОЧЕМУ СТОИТ ВЫБИРАТЬ НАС */}
             <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 border-t border-slate-900 pt-16 space-y-8">
               <div className="text-center max-w-xl mx-auto space-y-2">
-                <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight uppercase">Почему выбирают SmartQueue?</h2>
+                <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight uppercase">Why Choose SmartQueue?</h2>
                 <p className="text-slate-400 text-xs">Три фундаментальных правила архитектуры нашего сервиса</p>
               </div>
 
@@ -552,7 +715,6 @@ export default function SmartQueueUltimate() {
               </p>
             </div>
 
-            {/* Карточка офиса */}
             <div className="bg-gradient-to-r from-slate-950 to-[#120F24] border border-slate-800 p-6 rounded-2xl grid sm:grid-cols-3 gap-6 items-center">
               <div className="text-center sm:text-left space-y-1">
                 <span className="text-[10px] font-mono text-slate-500 uppercase font-bold block">Штаб-квартира</span>
@@ -589,10 +751,6 @@ export default function SmartQueueUltimate() {
                 <span className="text-slate-400 flex items-center gap-2"><FiMapPin className="text-emerald-400" /> Адрес офиса разработки:</span>
                 <span className="font-bold text-white text-right">г. Алматы, пр. Достык, 132</span>
               </div>
-            </div>
-
-            <div className="bg-indigo-950/20 border border-indigo-500/20 p-4 rounded-xl text-center text-xs text-indigo-300">
-              Прием граждан и обработка писем по интеграции платежных шлюзов осуществляется круглосуточно.
             </div>
           </div>
         )}
@@ -644,22 +802,75 @@ export default function SmartQueueUltimate() {
 
         {/* ПАНЕЛЬ АДМИНИСТРАТОРА (СТРОГИЙ ДОСТУП ДЛЯ АСЫЛЖАНА) */}
         {activeTab === 'admin' && userSession && isAdmin && (
-          <div className="max-w-4xl mx-auto py-12 px-4 space-y-10 animate-scale-up">
+          <div className="max-w-4xl mx-auto py-12 px-4 space-y-8 animate-scale-up">
             <div className="bg-gradient-to-r from-cyan-950/30 to-indigo-950/30 border border-cyan-500/20 p-4 rounded-xl flex items-center gap-3">
               <div className="text-2xl text-cyan-400">👑</div>
               <div>
-                <h2 className="text-sm font-black text-white uppercase">Авторизован главный супер-администратор</h2>
-                <p className="text-slate-400 text-[11px]">Добро пожаловать, <b>{ADMIN_CREDENTIALS.name}</b>. Вам открыт защищенный доступ к реестру.</p>
+                <h2 className="text-sm font-black text-white uppercase">Панель управления Асылжана</h2>
+                <p className="text-slate-400 text-[11px]">Интерактивные боевые действия и конфигурация серверов Алматы.</p>
               </div>
             </div>
 
+            {/* БЛОК ИНТЕРАКТИВНЫХ ДЕЙСТВИЙ */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <button 
+                onClick={toggleSystemStatus}
+                className={`p-4 rounded-xl border text-left transition-all text-xs space-y-2 ${isSystemActive ? 'bg-amber-500/10 border-amber-500/30 text-amber-300 hover:bg-amber-500/20' : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/20'}`}
+              >
+                <div className="font-bold uppercase tracking-wider text-[10px]">Команда Шлюза</div>
+                <div className="font-black text-sm">{isSystemActive ? '🛑 Выключить приём талонов' : '⚡️ Активировать шлюз'}</div>
+                <p className="text-slate-400 text-[10px]">Глобальное перекрытие сервера для пользователей</p>
+              </button>
+
+              <button 
+                onClick={clearAllTickets}
+                className="p-4 bg-rose-500/10 border border-rose-500/30 hover:bg-rose-500/20 text-rose-300 rounded-xl text-left transition-all text-xs space-y-2"
+              >
+                <div className="font-bold uppercase tracking-wider text-[10px]">Очистка Реестра</div>
+                <div className="font-black text-sm">🧹 Обнулить базу очередей</div>
+                <p className="text-slate-400 text-[10px]">Сбросить все выданные талоны из оперативной памяти</p>
+              </button>
+
+              <button 
+                onClick={triggerMockError}
+                className="p-4 bg-purple-500/10 border border-purple-500/30 hover:bg-purple-500/20 text-purple-300 rounded-xl text-left transition-all text-xs space-y-2"
+              >
+                <div className="font-bold uppercase tracking-wider text-[10px]">Тест Безопасности</div>
+                <div className="font-black text-sm">⚠️ Симулировать сбой API</div>
+                <p className="text-slate-400 text-[10px]">Проверить отказоустойчивость серверов Яндекса/Kaspi</p>
+              </button>
+
+              <button 
+                onClick={downloadRegistryLogs}
+                className="p-4 bg-cyan-500/10 border border-cyan-500/30 hover:bg-cyan-500/20 text-cyan-300 rounded-xl text-left transition-all text-xs space-y-2"
+              >
+                <div className="font-bold uppercase tracking-wider text-[10px]">Экспорт Системы</div>
+                <div className="font-black text-sm">💾 Скачать реестр логов (.log)</div>
+                <p className="text-slate-400 text-[10px]">Выгрузить полную историю действий граждан</p>
+              </button>
+            </div>
+
+            {/* ЛОГИ СЕРВЕРА */}
+            <div className="bg-slate-950 border border-slate-900 rounded-2xl p-4 space-y-2">
+              <span className="text-[9px] font-mono text-indigo-400 uppercase font-bold tracking-widest block">Live_Console_Stream</span>
+              <div className="bg-slate-900 p-3 rounded-xl font-mono text-[11px] text-slate-300 space-y-1 max-h-[140px] overflow-y-auto">
+                {systemLogs.map((log, index) => (
+                  <div key={index} className="flex gap-2">
+                    <span className="text-slate-600">[{new Date().toLocaleTimeString()}]</span>
+                    <span className={log.includes('⚠️') ? 'text-amber-400' : 'text-slate-300'}>{log}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* СПИСОК ПОЛЬЗОВАТЕЛЕЙ */}
             <div className="space-y-4">
               <h3 className="text-base font-black text-white">Все зарегистрированные пользователи в системе</h3>
               <div className="bg-slate-950 border border-slate-800 rounded-2xl overflow-hidden text-xs">
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="bg-slate-900 text-slate-400 font-bold uppercase text-[9px] border-b border-slate-800">
-                      <th className="p-4">ФИО (Только буквы)</th>
+                      <th className="p-4">ФИО Гражданина</th>
                       <th className="p-4">ИИН</th>
                       <th className="p-4">Номер телефона</th>
                     </tr>
@@ -669,7 +880,12 @@ export default function SmartQueueUltimate() {
                       <tr key={i} className="hover:bg-slate-900/40">
                         <td className="p-4 font-bold text-white flex items-center gap-2"><FiUser className="text-indigo-400" /> {user.name}</td>
                         <td className="p-4 font-mono text-purple-400">{user.iin}</td>
-                        <td className="p-4 text-slate-400">{formatPhoneNumber(user.phone)}</td>
+                        <td className="p-4 text-slate-400 font-mono">
+                          {user.phone.length === 11 
+                            ? `+7 (${user.phone.slice(1,4)}) ${user.phone.slice(4,7)}-${user.phone.slice(7,9)}-${user.phone.slice(9,11)}`
+                            : user.phone
+                          }
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -677,10 +893,11 @@ export default function SmartQueueUltimate() {
               </div>
             </div>
 
+            {/* УПРАВЛЕНИЕ ОЧЕРЕДЬЮ ТАЛОНОВ */}
             <div className="space-y-4">
-              <h3 className="text-base font-black text-white">Симулятор продвижения очереди окошек</h3>
+              <h3 className="text-base font-black text-white">Живое продвижение очередей окошек</h3>
               {myTickets.length === 0 ? (
-                <p className="text-slate-500 text-xs py-4 text-center bg-slate-900/30 border border-dashed border-slate-800 rounded-xl">Создайте талон на главной странице, чтобы увидеть его здесь.</p>
+                <p className="text-slate-500 text-xs py-4 text-center bg-slate-900/30 border border-dashed border-slate-800 rounded-xl">Создайте талон на главной странице, чтобы увидеть его здесь в панели диспетчера.</p>
               ) : (
                 <div className="bg-slate-950 border border-slate-800 rounded-xl divide-y divide-slate-900 text-xs">
                   {myTickets.map(t => (
@@ -693,6 +910,7 @@ export default function SmartQueueUltimate() {
                         disabled={t.peopleAhead === 0}
                         onClick={() => {
                           setMyTickets(prev => prev.map(item => item.id === t.id ? { ...item, peopleAhead: Math.max(0, item.peopleAhead - 1) } : item))
+                          setSystemLogs(prev => [`Продвинута очередь по талону ${t.number}`, ...prev])
                         }}
                         className="bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600 hover:text-white px-3 py-1.5 rounded-lg font-bold text-[11px] transition-colors"
                       >
@@ -708,7 +926,7 @@ export default function SmartQueueUltimate() {
 
       </main>
 
-      {/* МОДАЛКА ВЕРИФИКАЦИИ */}
+      {/* МОДАЛКА ВЕРИФИКАЦИИ / РЕГИСТРАЦИИ С МАСКОЙ НОМЕРА */}
       {showAuthModal && (
         <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
           <div className="bg-[#0F1322] border border-indigo-500/20 max-w-md w-full rounded-2xl p-6 space-y-4 relative animate-scale-up">
@@ -723,17 +941,30 @@ export default function SmartQueueUltimate() {
               <>
                 <div className="text-center space-y-1">
                   <h3 className="text-lg font-black text-white flex items-center justify-center gap-2"><FiLock className="text-indigo-400" /> Верификация личности по ИИН</h3>
-                  <p className="text-slate-400 text-xs">Заполните поля. Система распределит уровни доступа автоматически.</p>
+                  <p className="text-slate-400 text-xs">При вводе ИИН Асылжана потребуется секретный пароль администратора.</p>
                 </div>
                 <form onSubmit={handleRegisterSubmit} className="space-y-3.5 text-xs">
                   <div>
-                    <label className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider mb-1">ИИН Гражданина (Строго 12 цифр)</label>
+                    <label className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider mb-1">ИИН Гражданина (12 цифр)</label>
                     <input 
-                      type="text" required placeholder="Введите 12 цифр" value={regIin}
+                      type="text" required placeholder="Введите 12 цифр ИИН" value={regIin}
                       onChange={e => setRegIin(e.target.value.replace(/\D/g, '').slice(0, 12))}
-                      className="w-full bg-slate-950 border border-slate-800 p-3 rounded-xl text-white focus:outline-none focus:border-indigo-500 font-mono"
+                      className="w-full bg-slate-950 border border-slate-800 p-3 rounded-xl text-white focus:outline-none focus:border-indigo-500 font-mono text-sm tracking-widest"
                     />
                   </div>
+
+                  {/* ПОЛЕ ПАРОЛЯ — Показывается ТОЛЬКО если вводится ИИН Асылжана */}
+                  {regIin === ADMIN_CREDENTIALS.iin && (
+                    <div className="bg-cyan-950/20 border border-cyan-500/20 p-3 rounded-xl space-y-2">
+                      <label className="text-[10px] font-bold text-cyan-400 block uppercase tracking-wider">🔒 Секретный пароль администратора</label>
+                      <input 
+                        type="password" required placeholder="Введите пароль доступа" value={regPassword}
+                        onChange={e => setRegPassword(e.target.value)}
+                        className="w-full bg-slate-950 border border-cyan-500/40 p-3 rounded-xl text-white focus:outline-none focus:border-cyan-400 font-mono"
+                      />
+                    </div>
+                  )}
+
                   <div>
                     <label className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider mb-1">ФИО (Только буквы)</label>
                     <input 
@@ -742,17 +973,20 @@ export default function SmartQueueUltimate() {
                       className="w-full bg-slate-950 border border-slate-800 p-3 rounded-xl text-white focus:outline-none focus:border-indigo-500"
                     />
                   </div>
+
+                  {/* ИНПУТ С ЖЕСТКОЙ ВСТРОЕННОЙ МАСКОЙ НОМЕРА ТЕЛЕФОНА */}
                   <div>
-                    <label className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider mb-1">Номер телефона (Максимум 11 цифр)</label>
+                    <label className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider mb-1">Номер телефона</label>
                     <input 
-                      type="text" required placeholder="87009522306" value={regPhone}
-                      onChange={handlePhoneChange}
-                      className="w-full bg-slate-950 border border-slate-800 p-3 rounded-xl text-white focus:outline-none focus:border-indigo-500 font-mono"
+                      type="text" 
+                      required 
+                      placeholder="+7 (700) 000-00-00" 
+                      value={getMaskedPhone(regPhone)}
+                      onChange={handlePhoneInputChange}
+                      className="w-full bg-slate-950 border border-slate-800 p-3 rounded-xl text-white focus:outline-none focus:border-indigo-500 font-mono text-sm"
                     />
-                    {regPhone && (
-                      <span className="text-[10px] text-indigo-400 mt-1 block">Маска вывода: {formatPhoneNumber(regPhone)}</span>
-                    )}
                   </div>
+
                   <button 
                     type="submit"
                     className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl transition-all uppercase tracking-wider"
@@ -764,7 +998,7 @@ export default function SmartQueueUltimate() {
             ) : (
               <div className="py-8 text-center space-y-4">
                 <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
-                <p className="text-xs text-slate-300 font-medium">Безопасное подключение к реестрам ГБД ФЛ...</p>
+                <p className="text-xs text-slate-300 font-medium">Безопасное подключение к государственным реестрам...</p>
               </div>
             )}
           </div>
