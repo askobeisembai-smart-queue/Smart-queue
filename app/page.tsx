@@ -7,7 +7,29 @@ import {
   FiSend, FiUser, FiX, FiCheck, FiAlertTriangle, FiAward, FiActivity, FiZap, FiLogOut, FiPhone, FiMail, FiCalendar, FiMenu
 } from 'react-icons/fi'
 
-// База организаций
+// --- ИНИЦИАЛИЗАЦИЯ FIREBASE ---
+import { initializeApp, getApps, getApp } from 'firebase/app'
+import { 
+  getFirestore, doc, getDoc, setDoc, updateDoc, collection, 
+  getDocs, deleteDoc, onSnapshot 
+} from 'firebase/firestore'
+
+// ТВОИ РЕАЛЬНЫЕ КЛЮЧИ FIREBASE ВНЕДРЕНЫ СЮДА:
+const firebaseConfig = {
+  apiKey: "AIzaSyDj_z3Tl7AHKx3T7INzqh6gIjLF8Q4lfgQ",
+  authDomain: "queue-for-you-26f13.firebaseapp.com",
+  projectId: "queue-for-you-26f13",
+  storageBucket: "queue-for-you-26f13.firebasestorage.app",
+  messagingSenderId: "989123949112",
+  appId: "1:989123949112:web:51d758bd0ddfcc4353accd",
+  measurementId: "G-VDWNGKBXGG"
+}
+
+// Подключение к Firebase (без повторной инициализации)
+const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp()
+const db = getFirestore(app)
+
+// Статическая база организаций
 const ORGANIZATIONS = [
   { id: 'con-1', name: 'ЦОН Ауэзовского района', category: 'ЦОН', address: 'г. Алматы, ул. Жандосова, 51', avgTime: 12, load: 'Средняя', loadColor: 'text-amber-400 bg-amber-500/10 border-amber-500/20', distance: '0.8 км', x: '35%', y: '55%' },
   { id: 'bank-2', name: 'Kaspi.kz (Флагманское отделение)', category: 'Банки', address: 'г. Алматы, ул. Толе би, 101', avgTime: 5, load: 'Низкая', loadColor: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20', distance: '1.2 км', x: '50%', y: '40%' },
@@ -22,13 +44,6 @@ const SERVICES_BY_CATEGORY: { [key: string]: string[] } = {
   'Старт продаж iPhone': ['Выдача предзаказов (Pre-order)', 'Живая электронная очередь (Launch Line)', 'Оформление рассрочки']
 }
 
-// Данные супер-администратора (Владельца)
-const ADMIN_CREDENTIALS = {
-  iin: '060621501916',
-  password: '1234112341',
-  name: 'Асылжан Бейсембай'
-}
-
 export default function SmartQueueUltimate() {
   const [activeTab, setActiveTab] = useState('home')
   const [selectedCategory, setSelectedCategory] = useState('Все')
@@ -39,17 +54,14 @@ export default function SmartQueueUltimate() {
   // Состояния для Бургер-меню
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
 
-  // Глобальные настройки админки (Управление состоянием сайта)
+  // Глобальные настройки админки (Синхронизируются с Firebase)
   const [isSystemActive, setIsSystemActive] = useState(true)
   const [systemLogs, setSystemLogs] = useState<string[]>(['Система инициализирована', 'Шлюз Алматы активен'])
 
-  // База пользователей для админки
-  const [registeredUsers, setRegisteredUsers] = useState<any[]>([
-    { name: 'Нурлан Ахметов', iin: '950812300456', phone: '87071112233' },
-    { name: 'Алина Серикова', iin: '010322650987', phone: '87474445566' }
-  ])
+  // База пользователей для админки (CRUD из Firestore)
+  const [registeredUsers, setRegisteredUsers] = useState<any[]>([])
 
-  // Текущая сессия
+  // Текущая сессия пользователя
   const [userSession, setUserSession] = useState<any>(null) 
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [authStep, setAuthStep] = useState(1) 
@@ -57,8 +69,8 @@ export default function SmartQueueUltimate() {
   // Поля формы регистрации / входа
   const [regIin, setRegIin] = useState('')
   const [regName, setRegName] = useState('')
-  const [regPhone, setRegPhone] = useState('') // Хранит только чистые цифры
-  const [regPassword, setRegPassword] = useState('') // Поле пароля для админа
+  const [regPhone, setRegPhone] = useState('') 
+  const [regPassword, setRegPassword] = useState('') 
 
   // Платежи
   const [showPaymentModal, setShowPaymentModal] = useState(false)
@@ -77,8 +89,46 @@ export default function SmartQueueUltimate() {
   const [isAiTyping, setIsAiTyping] = useState(false)
   const [isOperatorConnected, setIsOperatorConnected] = useState(false)
 
-  // Жесткая проверка: доступ к админ-панели есть ТОЛЬКО у Асылжана по ИИН + Паролю
-  const isAdmin = userSession?.iin === ADMIN_CREDENTIALS.iin && userSession?.isAdmin === true
+  const isAdmin = userSession?.role === 'admin'
+
+  // --- СИНХРОНИЗАЦИЯ С FIREBASE В РЕАЛЬНОМ ВРЕМЕНИ (READ / LISTEN) ---
+  useEffect(() => {
+    // 1. Прослушивание статуса шлюза системы
+    const systemDocRef = doc(db, 'system_settings', 'global')
+    const unsubSystem = onSnapshot(systemDocRef, (docSnap) => {
+      if (docSnap.exists()) {
+        setIsSystemActive(docSnap.data().isSystemActive)
+      }
+    })
+
+    // 2. Получение списка пользователей (для админки)
+    const unsubUsers = onSnapshot(collection(db, 'users'), (querySnapshot) => {
+      const usersList: any[] = []
+      querySnapshot.forEach((doc) => {
+        usersList.push({ id: doc.id, ...doc.data() })
+      })
+      setRegisteredUsers(usersList)
+    })
+
+    // 3. Получение талонов в реальном времени
+    const unsubTickets = onSnapshot(collection(db, 'tickets'), (querySnapshot) => {
+      const ticketsList: any[] = []
+      querySnapshot.forEach((doc) => {
+        ticketsList.push({ id: doc.id, ...doc.data() })
+      })
+      if (userSession?.role === 'admin') {
+        setMyTickets(ticketsList)
+      } else if (userSession) {
+        setMyTickets(ticketsList.filter(t => t.userIin === userSession.iin))
+      }
+    })
+
+    return () => {
+      unsubSystem()
+      unsubUsers()
+      unsubTickets()
+    }
+  }, [userSession])
 
   const calculatePrice = (minutes: number) => {
     return 1000 + (minutes * 50)
@@ -90,95 +140,86 @@ export default function SmartQueueUltimate() {
     }
   }, [selectedOrg])
 
-  // Функция форматирования номера телефона для вывода внутри инпута (Маска)
   const getMaskedPhone = (rawDigits: string) => {
     if (!rawDigits) return '+7 ('
     const digits = rawDigits.replace(/\D/g, '')
-    
-    // Если пользователь стирает всё, оставляем префикс
     let result = '+7 ('
-    if (digits.length > 1) {
-      result += digits.slice(1, 4)
-    }
-    if (digits.length >= 5) {
-      result += ') ' + digits.slice(4, 7)
-    }
-    if (digits.length >= 8) {
-      result += '-' + digits.slice(7, 9)
-    }
-    if (digits.length >= 10) {
-      result += '-' + digits.slice(9, 11)
-    }
+    if (digits.length > 1) result += digits.slice(1, 4)
+    if (digits.length >= 5) result += ') ' + digits.slice(4, 7)
+    if (digits.length >= 8) result += '-' + digits.slice(7, 9)
+    if (digits.length >= 10) result += '-' + digits.slice(9, 11)
     return result
   }
 
-  // Обработчик изменения ввода телефона с маской
   const handlePhoneInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const inputVal = e.target.value
-    
-    // Получаем только чистые цифры из введенного текста
     let digits = inputVal.replace(/\D/g, '')
-    
-    // Корректируем, если пользователь пытается стереть или изменить первую семерку
     if (digits.length === 0) {
       setRegPhone('')
       return
     }
-    
     if (!digits.startsWith('7') && digits.length > 0) {
       digits = '7' + digits
     }
-
     if (digits.length <= 11) {
       setRegPhone(digits)
     }
   }
 
-  // Хэндлер ввода имени (Только Буквы и Пробелы)
   const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value
     const onlyLetters = value.replace(/[^a-zA-Zа-яА-ЯёЁәӘғҒқҚңҢөӨұҰүҮіІһҺ\s]/g, '')
     setRegName(onlyLetters)
   }
 
-  const handleRegisterSubmit = (e: React.FormEvent) => {
+  // --- ФУНКЦИЯ АВТОРИЗАЦИИ И РЕГИСТРАЦИИ ---
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (regIin.length !== 12) {
       alert('Ошибка: ИИН должен содержать ровно 12 цифр!')
       return
     }
-    if (regPhone.length < 11) {
+    if (regIin !== '060621501916' && regPhone.length < 11) {
       alert('Ошибка: Заполните номер телефона полностью!')
       return
     }
 
-    // Логика проверки на Администратора
-    const isLoggingAsAdmin = regIin === ADMIN_CREDENTIALS.iin
-    if (isLoggingAsAdmin && regPassword !== ADMIN_CREDENTIALS.password) {
-      alert('Ошибка: Обнаружен ИИН администратора, но введен неверный секретный пароль!')
-      return
-    }
-
     setAuthStep(2)
-    
-    setTimeout(() => {
-      const newUser = {
-        name: isLoggingAsAdmin ? ADMIN_CREDENTIALS.name : regName,
-        iin: regIin,
-        phone: regPhone,
-        isAdmin: isLoggingAsAdmin
-      }
 
-      setUserSession(newUser)
-      
-      if (!registeredUsers.some(u => u.iin === regIin)) {
-        setRegisteredUsers(prev => [newUser, ...prev])
+    try {
+      const userDocRef = doc(db, 'users', regIin)
+      const userDocSnap = await getDoc(userDocRef)
+
+      if (userDocSnap.exists()) {
+        const userData = userDocSnap.data()
+        
+        if (userData.role === 'admin') {
+          if (regPassword !== userData.password) {
+            alert('Ошибка: Неверный секретный ключ администратора!')
+            setAuthStep(1)
+            return
+          }
+        }
+        
+        setUserSession({ iin: regIin, ...userData })
+      } else {
+        const newUserData = {
+          name: regName,
+          phone: regPhone,
+          role: 'user'
+        }
+        await setDoc(userDocRef, newUserData)
+        setUserSession({ iin: regIin, ...newUserData })
       }
 
       setShowAuthModal(false)
       setAuthStep(1)
       setRegPassword('')
-    }, 1500)
+    } catch (error) {
+      console.error("Ошибка Firebase Auth: ", error)
+      alert('Ошибка соединения с базой данных Firebase.')
+      setAuthStep(1)
+    }
   }
 
   const handleLogout = () => {
@@ -203,35 +244,38 @@ export default function SmartQueueUltimate() {
     setShowPaymentModal(true)
   }
 
-  const handleProcessPayment = () => {
+  // --- ФУНКЦИЯ СОЗДАНИЯ ТАЛОНА ---
+  const handleProcessPayment = async () => {
     setPaymentStep(2)
     
-    setTimeout(() => {
-      const prefix = selectedOrg.category === 'ЦОН' ? 'Ц' : selectedOrg.category === 'Банки' ? 'Б' : selectedOrg.category === 'Медицина' ? 'М' : 'APL'
-      const ticketNumber = `${prefix}-${Math.floor(100 + Math.random() * 900)}`
-      const peopleAhead = Math.floor(2 + Math.random() * 6)
+    const prefix = selectedOrg.category === 'ЦОН' ? 'Ц' : selectedOrg.category === 'Банки' ? 'Б' : selectedOrg.category === 'Медицина' ? 'М' : 'APL'
+    const ticketNumber = `${prefix}-${Math.floor(100 + Math.random() * 900)}`
+    const peopleAhead = Math.floor(2 + Math.random() * 6)
+    const ticketId = Date.now().toString()
+
+    const newTicket = {
+      orgName: selectedOrg.name,
+      number: ticketNumber,
+      window: windowType,
+      peopleAhead: peopleAhead,
+      estimatedTime: selectedOrg.avgTime,
+      pricePaid: calculatePrice(selectedOrg.avgTime),
+      userIin: userSession.iin,
+      createdAt: new Date().toISOString()
+    }
+
+    try {
+      await setDoc(doc(db, 'tickets', ticketId), newTicket)
       
-      const newTicket = {
-        id: Date.now(),
-        orgName: selectedOrg.name,
-        number: ticketNumber,
-        window: windowType,
-        peopleAhead: peopleAhead,
-        estimatedTime: selectedOrg.avgTime,
-        pricePaid: calculatePrice(selectedOrg.avgTime)
-      }
-      
-      setMyTickets([newTicket, ...myTickets])
+      setSystemLogs(prev => [`Эмиссия талона ${ticketNumber} для ИИН ${userSession.iin}`, ...prev])
       setShowPaymentModal(false)
       setCardNumber('')
       setCardExpiry('')
       setCardCvc('')
-      
-      // Добавляем запись в логи для админки
-      setSystemLogs(prev => [`Эмиссия талона ${ticketNumber} для ИИН ${userSession.iin}`, ...prev])
-      
       setActiveTab('profile')
-    }, 2000)
+    } catch (e) {
+      alert('Ошибка при генерации талона в Firebase')
+    }
   }
 
   const handleSendMessage = (e: React.FormEvent) => {
@@ -261,17 +305,29 @@ export default function SmartQueueUltimate() {
     }, 1100)
   }
 
-  // Функциональные действия кнопок админ-панели
-  const toggleSystemStatus = () => {
-    setIsSystemActive(!isSystemActive)
-    setSystemLogs(prev => [`Статус шлюза изменен на: ${!isSystemActive ? 'АКТИВЕН' : 'ЗАБЛОКИРОВАН'}`, ...prev])
+  // --- УПРАВЛЕНИЕ FIRESTORE АДМИНОМ ---
+  const toggleSystemStatus = async () => {
+    const nextStatus = !isSystemActive
+    try {
+      await updateDoc(doc(db, 'system_settings', 'global'), { isSystemActive: nextStatus })
+      setSystemLogs(prev => [`Статус шлюза в Firestore изменен на: ${nextStatus ? 'АКТИВЕН' : 'ЗАБЛОКИРОВАН'}`, ...prev])
+    } catch (e) {
+      alert('Не удалось обновить конфигурацию шлюза. Проверьте, создана ли коллекция system_settings.')
+    }
   }
 
-  const clearAllTickets = () => {
-    if(confirm('Вы действительно хотите обнулить все активные талоны в системе?')) {
-      setMyTickets([])
-      setSystemLogs(prev => ['База активных талонов полностью очищена администратором', ...prev])
-      alert('Все талоны успешно удалены из базы данных.')
+  const clearAllTickets = async () => {
+    if(confirm('Вы действительно хотите обнулить все активные талоны в Firebase Firestore?')) {
+      try {
+        const querySnapshot = await getDocs(collection(db, 'tickets'))
+        querySnapshot.forEach(async (ticketDoc) => {
+          await deleteDoc(doc(db, 'tickets', ticketDoc.id))
+        })
+        setSystemLogs(prev => ['База активных талонов полностью очищена в Firestore', ...prev])
+        alert('Все талоны успешно удалены из облачной базы данных.')
+      } catch (e) {
+        alert('Ошибка при очистке реестра Firestore.')
+      }
     }
   }
 
@@ -283,6 +339,20 @@ export default function SmartQueueUltimate() {
   const downloadRegistryLogs = () => {
     setSystemLogs(prev => ['Выгрузка логов безопасности осуществлена в файл формата .log', ...prev])
     alert('Логи успешно сформированы и отправлены на ваш защищенный терминал.')
+  }
+
+  const handleAdvanceTicket = async (ticketId: string, currentPeople: number) => {
+    try {
+      if (currentPeople <= 1) {
+        await deleteDoc(doc(db, 'tickets', ticketId))
+        setSystemLogs(prev => [`Талон ${ticketId} успешно обслужен и архивирован`, ...prev])
+      } else {
+        await updateDoc(doc(db, 'tickets', ticketId), { peopleAhead: currentPeople - 1 })
+        setSystemLogs(prev => [`Продвинута очередь по талону ID: ${ticketId}`, ...prev])
+      }
+    } catch (e) {
+      alert('Ошибка изменения статуса талона.')
+    }
   }
 
   return (
@@ -310,7 +380,7 @@ export default function SmartQueueUltimate() {
             </div>
           </div>
           
-          {/* Навигация для Десктопа (hidden на мобильных) */}
+          {/* Навигация для Десктопа */}
           <nav className="hidden md:flex items-center gap-1 bg-slate-900/60 p-1 rounded-xl border border-slate-800/80">
             <button onClick={() => setActiveTab('home')} className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${activeTab === 'home' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}>Главная</button>
             <button onClick={() => setActiveTab('about')} className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${activeTab === 'about' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}>О нас / История</button>
@@ -320,7 +390,6 @@ export default function SmartQueueUltimate() {
               {myTickets.length > 0 && <span className="absolute -top-1 -right-1 w-4 h-4 bg-pink-500 text-white text-[9px] rounded-full flex items-center justify-center font-bold">{myTickets.length}</span>}
             </button>
             
-            {/* Доступ строго для вас (Асылжана) */}
             {userSession && isAdmin && (
               <button onClick={() => setActiveTab('admin')} className={`px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${activeTab === 'admin' ? 'bg-cyan-600 text-white animate-pulse' : 'text-cyan-400 hover:bg-slate-800'}`}>
                 Панель Администратора
@@ -348,12 +417,12 @@ export default function SmartQueueUltimate() {
                 onClick={() => { setAuthStep(1); setShowAuthModal(true); }}
                 className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs uppercase tracking-wider px-4 py-2.5 rounded-xl transition-all flex items-center gap-2"
               >
-                <FiUserPlus /> Регистрация
+                <FiUserPlus /> Регистрация / Вход
               </button>
             )}
           </div>
 
-          {/* Кнопка открытия мобильного бургер-меню */}
+          {/* Кнопка мобильного бургер-меню */}
           <div className="flex items-center md:hidden">
             <button 
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} 
@@ -472,7 +541,6 @@ export default function SmartQueueUltimate() {
                 </p>
               </div>
 
-              {/* АНИМАЦИЯ: Реальный человек в очереди */}
               <div className="lg:col-span-5 flex justify-center lg:justify-end">
                 <div className="relative w-full max-w-[340px] aspect-[4/5] bg-slate-900 rounded-3xl border border-indigo-500/20 overflow-hidden group shadow-2xl">
                   <img 
@@ -481,11 +549,8 @@ export default function SmartQueueUltimate() {
                     className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-700"
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/20 to-transparent"></div>
-                  
-                  {/* Сканирующий лазер */}
                   <div className="absolute left-0 right-0 h-[2px] bg-indigo-500/50 shadow-[0_0_15px_#6366f1] animate-scan"></div>
                   
-                  {/* Статус-карточка человека */}
                   <div className="absolute bottom-4 left-4 right-4 bg-slate-900/90 backdrop-blur-md border border-slate-800 p-4 rounded-2xl space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] font-mono uppercase text-indigo-400 font-bold tracking-wider">Идентификация очереди</span>
@@ -510,7 +575,7 @@ export default function SmartQueueUltimate() {
               </div>
             </section>
 
-            {/* ГЕОЛОКАЦИЯ: ЦЕНТР СИНХРОНИЗАЦИИ И СИМУЛЯТОР КАРТЫ АЛМАТЫ */}
+            {/* ГЕОЛОКАЦИЯ И СИМУЛЯТОР КАРТЫ АЛМАТЫ */}
             <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8">
               <div className="border-l-4 border-indigo-500 pl-4">
                 <h2 className="text-2xl font-black text-white tracking-tight flex items-center gap-2">
@@ -520,7 +585,6 @@ export default function SmartQueueUltimate() {
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch">
-                {/* Список мест */}
                 <div className="col-span-1 lg:col-span-6 bg-slate-900/60 border border-indigo-500/10 rounded-2xl p-6 space-y-4">
                   <div className="flex gap-1.5 overflow-x-auto pb-2 scrollbar-none">
                     {['Все', 'ЦОН', 'Банки', 'Медицина'].map(cat => (
@@ -545,579 +609,519 @@ export default function SmartQueueUltimate() {
                         <h4 className="font-bold text-white text-sm mt-0.5">{org.name}</h4>
                         <p className="text-slate-500 text-[10px] mt-1">{org.address}</p>
                         <div className="mt-4 pt-2 border-t border-slate-900 flex justify-between items-center">
-                          <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${org.loadColor}`}>{org.load}</span>
-                          <span className="font-bold text-white">⏱ ~{org.avgTime} мин</span>
+                          <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${org.loadColor}`}>
+                            Загрузка: {org.load}
+                          </span>
+                          <span className="text-slate-400 font-mono text-[10px] flex items-center gap-1">
+                            <FiClock className="text-indigo-400" /> ~{org.avgTime} мин
+                          </span>
                         </div>
                       </div>
                     ))}
                   </div>
                 </div>
 
-                {/* Интерактивная векторная карта Алматы */}
-                <div className="col-span-1 lg:col-span-6 bg-slate-950 border border-slate-800 rounded-2xl p-4 relative overflow-hidden flex flex-col justify-between min-h-[350px]">
-                  <div className="absolute inset-0 bg-[linear-gradient(to_right,#1e293b_1px,transparent_1px),linear-gradient(to_bottom,#1e293b_1px,transparent_1px)] bg-[size:30px_30px] opacity-20"></div>
+                {/* ИНТЕРАКТИВНАЯ КАРТА АЛМАТЫ (СИМУЛЯТОР) */}
+                <div className="col-span-1 lg:col-span-6 bg-slate-900/60 border border-indigo-500/10 rounded-2xl p-6 flex flex-col justify-between min-h-[400px] relative overflow-hidden">
+                  <div className="absolute inset-0 opacity-20 pointer-events-none" style={{ backgroundImage: 'radial-gradient(#4f46e5 1px, transparent 1px)', backgroundSize: '16px 16px' }}></div>
                   
-                  <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 to-purple-500/5"></div>
-
-                  <div className="relative z-10 flex justify-between items-center bg-slate-900/80 backdrop-blur-sm p-3 rounded-xl border border-slate-800">
-                    <div>
-                      <span className="text-[9px] text-indigo-400 font-mono font-bold uppercase block">Гео-сервер: Almaty_Core</span>
-                      <h3 className="text-xs font-black text-white uppercase">Сетка распределения нагрузок</h3>
+                  <div className="relative flex-grow bg-slate-950 rounded-xl border border-slate-800 p-4 overflow-hidden min-h-[250px]">
+                    <div className="absolute top-2 left-2 bg-slate-900/90 border border-slate-800 px-2.5 py-1 rounded-md text-[9px] font-mono text-indigo-300 z-10">
+                      СЕТКА КОРРЕКЦИИ GPS: АЛМАТЫ
                     </div>
-                    <span className="text-[10px] font-mono text-slate-400 bg-slate-950 px-2 py-1 rounded border border-slate-800">Центр: 43.2389° N</span>
-                  </div>
 
-                  {/* Метки на карте */}
-                  <div className="absolute inset-0 top-20 bottom-4 left-4 right-4">
+                    {/* Точки организаций на карте */}
                     {ORGANIZATIONS.map(org => (
-                      <div 
-                        key={org.id}
-                        className="absolute transition-all duration-500"
+                      <button
+                        key={`map-${org.id}`}
+                        onClick={() => setSelectedOrg(org)}
                         style={{ left: org.x, top: org.y }}
+                        className={`absolute w-3.5 h-3.5 -ml-1.5 -mt-1.5 rounded-full transition-all flex items-center justify-center ${selectedOrg?.id === org.id ? 'bg-pink-500 scale-125 z-20 shadow-[0_0_12px_#ec4899]' : 'bg-indigo-500 hover:scale-110'}`}
+                        title={org.name}
                       >
-                        <div 
-                          onClick={() => setSelectedOrg(org)}
-                          className={`relative group cursor-pointer flex items-center justify-center w-4 h-4 rounded-full transition-all ${selectedOrg?.id === org.id ? 'bg-purple-500 scale-125 z-20' : 'bg-slate-700 hover:bg-indigo-500'}`}
-                        >
-                          {selectedOrg?.id === org.id && (
-                            <div className="absolute w-10 h-10 border border-purple-500 rounded-full animate-pulse-ring"></div>
-                          )}
-                          <FiMapPin className="w-2.5 h-2.5 text-white" />
-                          
-                          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-slate-900 border border-slate-800 text-[9px] text-slate-200 px-2 py-1 rounded-md whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-30 font-bold">
-                            {org.name} ({org.distance})
-                          </div>
+                        <span className="absolute w-full h-full rounded-full bg-inherit animate-ping opacity-40"></span>
+                      </button>
+                    ))}
+
+                    {/* Информация о выбранной точке */}
+                    {selectedOrg && (
+                      <div className="absolute bottom-3 left-3 right-3 bg-slate-900/95 border border-purple-500/30 p-3 rounded-xl flex items-center justify-between backdrop-blur-md animate-scale-up">
+                        <div className="space-y-0.5">
+                          <h5 className="text-xs font-bold text-white truncate max-w-[180px]">{selectedOrg.name}</h5>
+                          <p className="text-[10px] text-slate-400 font-mono">Дистанция: {selectedOrg.distance}</p>
                         </div>
+                        <button 
+                          onClick={() => handleGetTicketClick(selectedOrg)}
+                          className="bg-purple-600 hover:bg-purple-700 text-white text-[10px] font-black uppercase px-3 py-1.5 rounded-lg transition-all"
+                        >
+                          Выбрать
+                        </button>
                       </div>
-                    ))}
+                    )}
                   </div>
 
-                  <div className="relative z-10 bg-slate-900/90 border border-purple-500/20 p-3 rounded-xl text-xs flex justify-between items-center">
-                    <div>
-                      <span className="text-[10px] text-slate-400 block">Выбранная локация:</span>
-                      <span className="text-white font-black block text-xs">{selectedOrg?.name}</span>
+                  {/* Окно конфигурации услуги */}
+                  {selectedOrg && (
+                    <div className="mt-4 pt-4 border-t border-slate-800 grid sm:grid-cols-12 gap-4 items-center">
+                      <div className="sm:col-span-7 space-y-1">
+                        <label className="text-[10px] uppercase font-bold text-slate-400 block">Выберите тип услуги:</label>
+                        <select 
+                          value={windowType}
+                          onChange={(e) => setWindowType(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500 transition-all"
+                        >
+                          {SERVICES_BY_CATEGORY[selectedOrg.category]?.map((service, i) => (
+                            <option key={i} value={service}>{service}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="sm:col-span-5">
+                        <button
+                          onClick={() => handleGetTicketClick(selectedOrg)}
+                          className="w-full h-10 mt-5 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white text-xs font-bold uppercase tracking-wider rounded-xl transition-all shadow-lg flex items-center justify-center gap-1.5"
+                        >
+                          <FiZap /> Получить талон
+                        </button>
+                      </div>
                     </div>
-                    <span className="text-[10px] font-mono text-purple-400 font-bold bg-purple-500/10 px-2 py-0.5 rounded">{selectedOrg?.distance} от вас</span>
-                  </div>
+                  )}
                 </div>
               </div>
             </section>
-
-            {/* БИЛЛИНГ И ОФОРМЛЕНИЕ */}
-            <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-              <div className="bg-gradient-to-r from-slate-900 via-[#15112B] to-slate-900 border border-purple-500/10 rounded-3xl p-8 grid lg:grid-cols-2 gap-8 items-center">
-                <div className="space-y-4">
-                  <h3 className="text-lg font-black text-purple-300 uppercase tracking-widest flex items-center gap-2"><FiSliders /> Калькуляция пошлины талона</h3>
-                  <div className="space-y-2 text-xs text-slate-400">
-                    <div className="flex justify-between p-3 bg-slate-950/60 rounded-xl border border-slate-900">
-                      <span>Фиксированная пошлина системы:</span>
-                      <strong className="text-white">1 000 ₸</strong>
-                    </div>
-                    <div className="flex justify-between p-3 bg-slate-950/60 rounded-xl border border-slate-900">
-                      <span>Нагрузка по времени ожидания (~{selectedOrg?.avgTime} мин):</span>
-                      <strong className="text-white">+{selectedOrg ? selectedOrg.avgTime * 50 : 0} ₸</strong>
-                    </div>
-                  </div>
-                  <div className="pt-4 border-t border-slate-800 flex justify-between items-center">
-                    <span className="font-bold text-white text-sm">Итоговая сумма:</span>
-                    <span className="text-2xl font-mono font-black text-emerald-400">{selectedOrg ? calculatePrice(selectedOrg.avgTime).toLocaleString('ru-RU') : 1000} ₸</span>
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <label className="text-[10px] text-slate-400 font-bold uppercase block tracking-wider">Необходимая государственная услуга:</label>
-                  <select 
-                    value={windowType} 
-                    onChange={e => setWindowType(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 p-3.5 rounded-xl text-xs font-bold text-slate-200 focus:outline-none focus:border-indigo-500"
-                  >
-                    {SERVICES_BY_CATEGORY[selectedOrg?.category || 'ЦОН'].map((s, i) => (
-                      <option key={i} value={s}>{s}</option>
-                    ))}
-                  </select>
-
-                  <button 
-                    onClick={() => handleGetTicketClick(selectedOrg)}
-                    className={`w-full text-white font-black text-xs uppercase tracking-wider py-4 rounded-xl shadow-xl transition-all ${!isSystemActive ? 'bg-slate-800 border border-slate-700 text-slate-500 cursor-not-allowed' : 'bg-gradient-to-r from-indigo-600 to-purple-600 shadow-indigo-600/20 hover:from-indigo-500 hover:to-purple-500'}`}
-                  >
-                    {!isSystemActive ? 'Сервер заблокирован админом' : !userSession ? 'Пройти верификацию для брони' : 'Оплатить бронирование'}
-                  </button>
-                </div>
-              </div>
-            </section>
-
-            {/* 3 ПРИЧИНЫ ПОЧЕМУ СТОИТ ВЫБИРАТЬ НАС */}
-            <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 border-t border-slate-900 pt-16 space-y-8">
-              <div className="text-center max-w-xl mx-auto space-y-2">
-                <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight uppercase">Why Choose SmartQueue?</h2>
-                <p className="text-slate-400 text-xs">Три фундаментальных правила архитектуры нашего сервиса</p>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="bg-slate-900/30 border border-slate-800/80 p-6 rounded-2xl space-y-3 relative group overflow-hidden">
-                  <div className="absolute top-0 left-0 w-1 h-full bg-indigo-500"></div>
-                  <div className="w-10 h-10 bg-indigo-500/10 text-indigo-400 rounded-xl flex items-center justify-center text-lg font-bold">01</div>
-                  <h3 className="text-sm font-black text-white uppercase tracking-wider">Экономия до 2 часов в день</h3>
-                  <p className="text-slate-400 text-xs leading-relaxed">
-                    Вам больше не нужно физически сидеть в очередях. Система автоматически резервирует и продвигает ваш виртуальный слот на сервере, пока вы занимаетесь своими делами.
-                  </p>
-                </div>
-
-                <div className="bg-slate-900/30 border border-slate-800/80 p-6 rounded-2xl space-y-3 relative group overflow-hidden">
-                  <div className="absolute top-0 left-0 w-1 h-full bg-purple-500"></div>
-                  <div className="w-10 h-10 bg-purple-500/10 text-purple-400 rounded-xl flex items-center justify-center text-lg font-bold">02</div>
-                  <h3 className="text-sm font-black text-white uppercase tracking-wider">Прямая интеграция с шлюзами</h3>
-                  <p className="text-slate-400 text-xs leading-relaxed">
-                    Мы взаимодействуем напрямую с API распределения нагрузки ЦОН и Kaspi QR. Данные синхронизируются мгновенно, исключая сбои кодов талонов.
-                  </p>
-                </div>
-
-                <div className="bg-slate-900/30 border border-slate-800/80 p-6 rounded-2xl space-y-3 relative group overflow-hidden">
-                  <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500"></div>
-                  <div className="w-10 h-10 bg-emerald-500/10 text-emerald-400 rounded-xl flex items-center justify-center text-lg font-bold">03</div>
-                  <h3 className="text-sm font-black text-white uppercase tracking-wider">Опыт реальной логистики</h3>
-                  <p className="text-slate-400 text-xs leading-relaxed">
-                    В основе алгоритмов SmartQueue заложены принципы распределения потоков и тайм-менеджмента мегаполиса, отточенные основателем на практике.
-                  </p>
-                </div>
-              </div>
-            </section>
-
           </div>
         )}
 
-        {/* СЕКЦИЯ: О НАС И ИСТОРИЯ ОСНОВАТЕЛЯ */}
+        {/* СТРАНИЦА: О НАС */}
         {activeTab === 'about' && (
-          <div className="max-w-3xl mx-auto py-16 px-4 space-y-12 animate-scale-up">
+          <div className="max-w-4xl mx-auto px-4 py-12 animate-scale-up space-y-8">
             <div className="text-center space-y-3">
-              <h2 className="text-3xl font-black text-white uppercase tracking-tight">История и Опыт команды</h2>
-              <div className="inline-flex items-center gap-2 bg-indigo-500/10 border border-indigo-500/20 px-3 py-1 rounded-full text-indigo-400 text-xs font-mono">
-                <FiCalendar className="w-3 h-3" /> Нам исполнилось 3 года • Основано в Алматы
+              <h2 className="text-3xl font-black text-white">История создания SmartQueue</h2>
+              <div className="h-1 w-20 bg-indigo-500 mx-auto rounded-full"></div>
+            </div>
+            <div className="bg-slate-900/50 border border-slate-800 p-6 sm:p-8 rounded-2xl space-y-4 text-slate-300 text-sm leading-relaxed">
+              <p>
+                Идея создания интеллектуального шлюза <strong>SmartQueue</strong> родилась в Алматы как ответ на бесконечные очереди и несовершенство старых систем распределения времени клиентов.
+              </p>
+              <p>
+                Основатель проекта, <strong>Асылжан Бейсембай</strong>, разработал эту платформу с целью полностью оцифровать процесс бронирования. Интеграция с Firebase Firestore в реальном времени позволила создать надежную архитектуру.
+              </p>
+              <blockquote className="border-l-4 border-purple-500 bg-purple-500/5 px-4 py-3 rounded-r-xl text-xs italic text-purple-300">
+                «Наша миссия — превратить хаос очередей в упорядоченный цифровой поток, где время каждого гражданина Казахстана ценится превыше всего.» — Асылжан Бейсембай.
+              </blockquote>
+            </div>
+          </div>
+        )}
+
+        {/* СТРАНИЦА: КОНТАКТЫ */}
+        {activeTab === 'contacts' && (
+          <div className="max-w-4xl mx-auto px-4 py-12 animate-scale-up space-y-8">
+            <div className="text-center space-y-3">
+              <h2 className="text-3xl font-black text-white">Контакты компании</h2>
+              <div className="h-1 w-20 bg-indigo-500 mx-auto rounded-full"></div>
+            </div>
+            <div className="grid sm:grid-cols-3 gap-4">
+              <div className="bg-slate-900/60 border border-slate-800 p-5 rounded-2xl text-center space-y-2">
+                <div className="w-10 h-10 rounded-xl bg-indigo-500/10 text-indigo-400 flex items-center justify-center mx-auto text-lg"><FiPhone /></div>
+                <h4 className="text-xs font-bold uppercase text-slate-400">Телефон</h4>
+                <p className="text-sm font-mono text-white">+7 (700) 952-23-06</p>
+              </div>
+              <div className="bg-slate-900/60 border border-slate-800 p-5 rounded-2xl text-center space-y-2">
+                <div className="w-10 h-10 rounded-xl bg-purple-500/10 text-purple-400 flex items-center justify-center mx-auto text-lg"><FiMail /></div>
+                <h4 className="text-xs font-bold uppercase text-slate-400">Email техподдержки</h4>
+                <p className="text-sm font-mono text-white">support@smartqueue.kz</p>
+              </div>
+              <div className="bg-slate-900/60 border border-slate-800 p-5 rounded-2xl text-center space-y-2">
+                <div className="w-10 h-10 rounded-xl bg-pink-500/10 text-pink-400 flex items-center justify-center mx-auto text-lg"><FiCalendar /></div>
+                <h4 className="text-xs font-bold uppercase text-slate-400">Шлюз Алматы</h4>
+                <p className="text-sm text-white">Круглосуточно 24/7</p>
               </div>
             </div>
+          </div>
+        )}
 
-            <div className="bg-slate-900/40 border border-slate-800 p-8 rounded-3xl space-y-6">
-              <div className="space-y-2 border-l-2 border-purple-500 pl-4">
-                <h3 className="text-lg font-black text-white uppercase tracking-wide">Путь от курьера до разработчика</h3>
-                <span className="text-xs text-purple-400 font-mono font-bold block">Личный манифест основателя — Асылжана Бейсембай</span>
+        {/* СТРАНИЦА: МОИ ТАЛОНЫ */}
+        {activeTab === 'profile' && (
+          <div className="max-w-4xl mx-auto px-4 py-12 animate-scale-up space-y-8">
+            <div className="border-l-4 border-pink-500 pl-4">
+              <h2 className="text-2xl font-black text-white uppercase tracking-tight">Ваш личный кабинет</h2>
+              <p className="text-slate-400 text-xs mt-0.5">Список выданных активных талонов в облаке Firestore</p>
+            </div>
+
+            {!userSession ? (
+              <div className="bg-slate-900/40 border border-slate-800 p-8 rounded-2xl text-center space-y-4">
+                <p className="text-slate-400 text-sm">Пожалуйста, авторизуйтесь для просмотра ваших талонов.</p>
+                <button onClick={() => setShowAuthModal(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs uppercase tracking-wider px-5 py-2.5 rounded-xl transition-all">Авторизоваться</button>
+              </div>
+            ) : myTickets.length === 0 ? (
+              <div className="bg-slate-900/40 border border-slate-800 p-8 rounded-2xl text-center space-y-2">
+                <p className="text-slate-400 text-sm">У вас пока нет активных талонов.</p>
+                <button onClick={() => setActiveTab('home')} className="text-indigo-400 hover:underline text-xs font-bold">Получить свой первый талон на главной ➔</button>
+              </div>
+            ) : (
+              <div className="grid sm:grid-cols-2 gap-4">
+                {myTickets.map(ticket => (
+                  <div key={ticket.id} className="bg-slate-900 border border-indigo-500/20 p-5 rounded-2xl relative overflow-hidden space-y-4 shadow-xl">
+                    <div className="absolute top-0 right-0 bg-indigo-600/10 text-indigo-400 text-[10px] font-mono font-bold px-3 py-1 rounded-bl-xl border-l border-b border-indigo-500/10">
+                      ID: {ticket.id.slice(-6)}
+                    </div>
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-purple-400 block bg-purple-500/5 border border-purple-500/10 px-2 py-0.5 rounded w-fit">ACTIVE TICKET</span>
+                    <div>
+                      <h3 className="text-base font-black text-white">{ticket.orgName}</h3>
+                      <p className="text-[11px] text-slate-400 mt-0.5">{ticket.window}</p>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 bg-slate-950 p-3 rounded-xl text-center font-mono border border-slate-800">
+                      <div>
+                        <span className="text-[9px] text-slate-500 block uppercase font-bold">Ваш Номер</span>
+                        <span className="text-xl font-black text-pink-400">{ticket.number}</span>
+                      </div>
+                      <div>
+                        <span className="text-[9px] text-slate-500 block uppercase font-bold">Очередь перед вами</span>
+                        <span className="text-xl font-black text-white">{ticket.peopleAhead} чел.</span>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-between items-center text-[11px] pt-1 text-slate-400 font-medium">
+                      <span>Ориентировочно: ~{ticket.estimatedTime} мин</span>
+                      <span className="text-emerald-400 font-bold">Оплачено: {ticket.pricePaid} ₸</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* СТРАНИЦА: ПАНЕЛЬ АДМИНИСТРАТОРА */}
+        {activeTab === 'admin' && userSession && isAdmin && (
+          <div className="max-w-6xl mx-auto px-4 py-12 animate-scale-up space-y-8">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-6">
+              <div>
+                <h2 className="text-3xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400">🔥 ТЕРМИНАЛ УПРАВЛЕНИЯ FIRESTORE</h2>
+                <p className="text-slate-400 text-xs mt-1">Главный операционный пульт: Асылжан Бейсембай</p>
               </div>
               
-              <p className="text-slate-300 text-xs leading-relaxed">
-                «Несколько лет назад я работал обычным курьером в <b>Яндексе</b> здесь, в Алматы. Каждый день я на своем опыте прочувствовал, что такое неэффективная логистика, километровые пробки, а главное — бесконечное, глупое ожидание в очередях при получении заказов или оформлении документов. Я понял, как дорого стоит время жителей нашего города».
-              </p>
-
-              <blockquote className="border-l-4 border-indigo-500 bg-indigo-950/20 p-4 rounded-xl text-xs text-indigo-200 italic leading-relaxed">
-                "Работа в доставке научила меня видеть паттерны скопления людей и понимать, как устроены транспортные и гражданские потоки. Проведя сотни часов в ожидании, я решил, что создам инструмент, который навсегда избавит алматинцев от этой рутины."
-              </blockquote>
-
-              <p className="text-slate-300 text-xs leading-relaxed">
-                Сегодня нашей компании уже <b>3 года</b>. Мы накопили колоссальный опыт в интеграции с государственными базами данных и фиксации платежей. SmartQueue — это результат переосмысления городской логистики, созданный человеком, который знает цену каждой минуте.
-              </p>
-            </div>
-
-            <div className="bg-gradient-to-r from-slate-950 to-[#120F24] border border-slate-800 p-6 rounded-2xl grid sm:grid-cols-3 gap-6 items-center">
-              <div className="text-center sm:text-left space-y-1">
-                <span className="text-[10px] font-mono text-slate-500 uppercase font-bold block">Штаб-квартира</span>
-                <h4 className="text-sm font-black text-white uppercase">Главный офис</h4>
-              </div>
-              <div className="sm:col-span-2 text-xs text-slate-400 space-y-1">
-                <p className="text-slate-200 font-bold">г. Алматы, Медеуский район, пр. Достык 132, БЦ "Grand", 4 этаж</p>
-                <p>3 года непрерывного мониторинга городских очередей и оптимизации трафика.</p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* СЕКЦИЯ: КОНТАКТЫ */}
-        {activeTab === 'contacts' && (
-          <div className="max-w-xl mx-auto py-16 px-4 space-y-8 animate-scale-up">
-            <div className="text-center space-y-2">
-              <h2 className="text-3xl font-black text-white uppercase tracking-tight">Техническая поддержка</h2>
-              <p className="text-slate-400 text-xs">Свяжитесь напрямую с операторами шлюза бронирования</p>
-            </div>
-
-            <div className="bg-slate-900/60 border border-slate-800 p-6 rounded-2xl space-y-4 text-xs">
-              <div className="flex items-center justify-between p-3.5 bg-slate-950 rounded-xl border border-slate-900">
-                <span className="text-slate-400 flex items-center gap-2"><FiPhone className="text-indigo-400" /> Телефон приемной:</span>
-                <a href="tel:+77009522306" className="font-mono font-bold text-white hover:text-indigo-400 transition-colors">+7 (700) 952-2306</a>
-              </div>
-
-              <div className="flex items-center justify-between p-3.5 bg-slate-950 rounded-xl border border-slate-900">
-                <span className="text-slate-400 flex items-center gap-2"><FiMail className="text-purple-400" /> Корпоративный Email:</span>
-                <a href="mailto:support@smartqueue.kz" className="font-mono font-bold text-white hover:text-purple-400 transition-colors">support@smartqueue.kz</a>
-              </div>
-
-              <div className="flex items-center justify-between p-3.5 bg-slate-950 rounded-xl border border-slate-900">
-                <span className="text-slate-400 flex items-center gap-2"><FiMapPin className="text-emerald-400" /> Адрес офиса разработки:</span>
-                <span className="font-bold text-white text-right">г. Алматы, пр. Достык, 132</span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* МОИ ТАЛОНЫ */}
-        {activeTab === 'profile' && (
-          <div className="max-w-xl mx-auto py-12 px-4 space-y-6 animate-scale-up">
-            <h2 className="text-xl font-black text-white text-center">Ваш личный кабинет талонов</h2>
-            
-            {userSession && (
-              <div className="bg-slate-900/40 border border-slate-800 p-4 rounded-xl flex justify-between items-center text-xs">
-                <div>
-                  <span className="text-slate-400 block text-[10px]">Авторизованный пользователь:</span>
-                  <span className="text-white font-bold text-sm">{userSession.name}</span>
-                </div>
-                <button 
-                  onClick={handleLogout}
-                  className="bg-rose-600 hover:bg-rose-700 text-white font-bold px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1"
-                >
-                  <FiLogOut /> Выйти из аккаунта
-                </button>
-              </div>
-            )}
-
-            {myTickets.length === 0 ? (
-              <p className="text-slate-500 text-xs text-center py-12 bg-slate-900/40 border border-dashed border-slate-800 rounded-2xl">Вы еще не приобрели ни одного билета времени.</p>
-            ) : (
-              <div className="space-y-4">
-                {myTickets.map(ticket => (
-                  <div key={ticket.id} className="bg-slate-900/80 border border-purple-500/20 rounded-2xl overflow-hidden shadow-xl">
-                    <div className="p-4 bg-slate-950/60 border-b border-slate-900 flex justify-between items-center text-xs">
-                      <div>
-                        <h4 className="font-bold text-white">{ticket.orgName}</h4>
-                        <span className="text-[10px] text-purple-400 block">{ticket.window}</span>
-                      </div>
-                      <span className="text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded font-mono">{ticket.pricePaid} ₸</span>
-                    </div>
-                    <div className="p-6 text-center">
-                      <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider block">Номер в электронной очереди</span>
-                      <div className="text-4xl font-mono font-black my-2 bg-slate-950 py-2 px-6 rounded-xl border border-slate-800 inline-block text-cyan-400 tracking-widest">{ticket.number}</div>
-                      <p className="text-xs text-slate-400 mt-2">Людей перед вами: <b className="text-purple-400">{ticket.peopleAhead} чел.</b> | Ожидание: ~<b>{ticket.estimatedTime} мин</b></p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ПАНЕЛЬ АДМИНИСТРАТОРА (СТРОГИЙ ДОСТУП ДЛЯ АСЫЛЖАНА) */}
-        {activeTab === 'admin' && userSession && isAdmin && (
-          <div className="max-w-4xl mx-auto py-12 px-4 space-y-8 animate-scale-up">
-            <div className="bg-gradient-to-r from-cyan-950/30 to-indigo-950/30 border border-cyan-500/20 p-4 rounded-xl flex items-center gap-3">
-              <div className="text-2xl text-cyan-400">👑</div>
-              <div>
-                <h2 className="text-sm font-black text-white uppercase">Панель управления Асылжана</h2>
-                <p className="text-slate-400 text-[11px]">Интерактивные боевые действия и конфигурация серверов Алматы.</p>
-              </div>
-            </div>
-
-            {/* БЛОК ИНТЕРАКТИВНЫХ ДЕЙСТВИЙ */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <button 
                 onClick={toggleSystemStatus}
-                className={`p-4 rounded-xl border text-left transition-all text-xs space-y-2 ${isSystemActive ? 'bg-amber-500/10 border-amber-500/30 text-amber-300 hover:bg-amber-500/20' : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/20'}`}
+                className={`px-5 py-3 rounded-xl font-black text-xs uppercase tracking-wider transition-all flex items-center gap-2 border ${isSystemActive ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' : 'bg-rose-500/10 text-rose-400 border-rose-500/30'}`}
               >
-                <div className="font-bold uppercase tracking-wider text-[10px]">Команда Шлюза</div>
-                <div className="font-black text-sm">{isSystemActive ? '🛑 Выключить приём талонов' : '⚡️ Активировать шлюз'}</div>
-                <p className="text-slate-400 text-[10px]">Глобальное перекрытие сервера для пользователей</p>
-              </button>
-
-              <button 
-                onClick={clearAllTickets}
-                className="p-4 bg-rose-500/10 border border-rose-500/30 hover:bg-rose-500/20 text-rose-300 rounded-xl text-left transition-all text-xs space-y-2"
-              >
-                <div className="font-bold uppercase tracking-wider text-[10px]">Очистка Реестра</div>
-                <div className="font-black text-sm">🧹 Обнулить базу очередей</div>
-                <p className="text-slate-400 text-[10px]">Сбросить все выданные талоны из оперативной памяти</p>
-              </button>
-
-              <button 
-                onClick={triggerMockError}
-                className="p-4 bg-purple-500/10 border border-purple-500/30 hover:bg-purple-500/20 text-purple-300 rounded-xl text-left transition-all text-xs space-y-2"
-              >
-                <div className="font-bold uppercase tracking-wider text-[10px]">Тест Безопасности</div>
-                <div className="font-black text-sm">⚠️ Симулировать сбой API</div>
-                <p className="text-slate-400 text-[10px]">Проверить отказоустойчивость серверов Яндекса/Kaspi</p>
-              </button>
-
-              <button 
-                onClick={downloadRegistryLogs}
-                className="p-4 bg-cyan-500/10 border border-cyan-500/30 hover:bg-cyan-500/20 text-cyan-300 rounded-xl text-left transition-all text-xs space-y-2"
-              >
-                <div className="font-bold uppercase tracking-wider text-[10px]">Экспорт Системы</div>
-                <div className="font-black text-sm">💾 Скачать реестр логов (.log)</div>
-                <p className="text-slate-400 text-[10px]">Выгрузить полную историю действий граждан</p>
+                <div className={`w-2.5 h-2.5 rounded-full ${isSystemActive ? 'bg-emerald-400 animate-pulse' : 'bg-rose-500'}`}></div>
+                Шлюз Приема Заявок: {isSystemActive ? 'АКТИВЕН' : 'ЗАБЛОКИРОВАН'}
               </button>
             </div>
 
-            {/* ЛОГИ СЕРВЕРА */}
-            <div className="bg-slate-950 border border-slate-900 rounded-2xl p-4 space-y-2">
-              <span className="text-[9px] font-mono text-indigo-400 uppercase font-bold tracking-widest block">Live_Console_Stream</span>
-              <div className="bg-slate-900 p-3 rounded-xl font-mono text-[11px] text-slate-300 space-y-1 max-h-[140px] overflow-y-auto">
-                {systemLogs.map((log, index) => (
-                  <div key={index} className="flex gap-2">
-                    <span className="text-slate-600">[{new Date().toLocaleTimeString()}]</span>
-                    <span className={log.includes('⚠️') ? 'text-amber-400' : 'text-slate-300'}>{log}</span>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <button onClick={clearAllTickets} className="p-4 bg-rose-500/10 hover:bg-rose-600 border border-rose-500/20 text-rose-400 hover:text-white rounded-xl text-left transition-all space-y-1">
+                <FiX className="w-5 h-5" />
+                <h4 className="text-xs font-bold uppercase tracking-wider block">Обнулить Firestore</h4>
+                <p className="text-[9px] opacity-70 block">Полное удаление талонов</p>
+              </button>
+              <button onClick={triggerMockError} className="p-4 bg-amber-500/10 hover:bg-amber-600 border border-amber-500/20 text-amber-400 hover:text-white rounded-xl text-left transition-all space-y-1">
+                <FiAlertTriangle className="w-5 h-5 animate-bounce" />
+                <h4 className="text-xs font-bold uppercase tracking-wider block">Сбой API Kaspi</h4>
+                <p className="text-[9px] opacity-70 block">Имитировать ошибку сети</p>
+              </button>
+              <button onClick={downloadRegistryLogs} className="p-4 bg-cyan-500/10 hover:bg-cyan-600 border border-cyan-500/20 text-cyan-400 hover:text-white rounded-xl text-left transition-all space-y-1">
+                <FiSliders className="w-5 h-5" />
+                <h4 className="text-xs font-bold uppercase tracking-wider block">Выгрузить логи</h4>
+                <p className="text-[9px] opacity-70 block">Скачать защищенный файл</p>
+              </button>
+              <div className="p-4 bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 rounded-xl text-left space-y-1">
+                <FiUser className="w-5 h-5" />
+                <h4 className="text-xs font-bold uppercase tracking-wider block">База Системы</h4>
+                <p className="text-[9px] text-indigo-400 font-mono font-bold block">Зарегистрировано: {registeredUsers.length} ИИН</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+              <div className="lg:col-span-8 bg-slate-900/60 border border-slate-800 rounded-2xl p-6 space-y-4">
+                <h3 className="text-base font-black text-white uppercase tracking-wider flex items-center gap-2">
+                  <FiActivity className="text-pink-400" /> Оперативный реестр талонов (Живой поток)
+                </h3>
+                {myTickets.length === 0 ? (
+                  <p className="text-xs text-slate-500 font-mono italic">В настоящий момент активных заявок в базе данных нет...</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="border-b border-slate-800 text-slate-400 font-mono text-[10px] uppercase">
+                          <th className="pb-3 font-bold">Талон</th>
+                          <th className="pb-3 font-bold">Организация / Услуга</th>
+                          <th className="pb-3 font-bold">ИИН Клиента</th>
+                          <th className="pb-3 font-bold text-center">Очередь</th>
+                          <th className="pb-3 font-bold text-right">Действие</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800/60 font-mono">
+                        {myTickets.map(ticket => (
+                          <tr key={ticket.id} className="hover:bg-slate-950/40 transition-all">
+                            <td className="py-3 font-black text-pink-400">{ticket.number}</td>
+                            <td className="py-3 max-w-[200px] truncate">
+                              <span className="text-white block font-sans font-bold">{ticket.orgName}</span>
+                              <span className="text-[10px] text-slate-400 block truncate">{ticket.window}</span>
+                            </td>
+                            <td className="py-3 text-slate-300">{ticket.userIin}</td>
+                            <td className="py-3 text-center text-white font-bold">{ticket.peopleAhead} чел.</td>
+                            <td className="py-3 text-right">
+                              <button
+                                onClick={() => handleAdvanceTicket(ticket.id, ticket.peopleAhead)}
+                                className="bg-indigo-600/20 hover:bg-indigo-600 text-indigo-400 hover:text-white px-2.5 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all"
+                              >
+                                {ticket.peopleAhead <= 1 ? 'Обслужить' : 'Продвинуть'}
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
-                ))}
+                )}
               </div>
-            </div>
 
-            {/* СПИСОК ПОЛЬЗОВАТЕЛЕЙ */}
-            <div className="space-y-4">
-              <h3 className="text-base font-black text-white">Все зарегистрированные пользователи в системе</h3>
-              <div className="bg-slate-950 border border-slate-800 rounded-2xl overflow-hidden text-xs">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-slate-900 text-slate-400 font-bold uppercase text-[9px] border-b border-slate-800">
-                      <th className="p-4">ФИО Гражданина</th>
-                      <th className="p-4">ИИН</th>
-                      <th className="p-4">Номер телефона</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-900 text-slate-300">
-                    {registeredUsers.map((user, i) => (
-                      <tr key={i} className="hover:bg-slate-900/40">
-                        <td className="p-4 font-bold text-white flex items-center gap-2"><FiUser className="text-indigo-400" /> {user.name}</td>
-                        <td className="p-4 font-mono text-purple-400">{user.iin}</td>
-                        <td className="p-4 text-slate-400 font-mono">
-                          {user.phone.length === 11 
-                            ? `+7 (${user.phone.slice(1,4)}) ${user.phone.slice(4,7)}-${user.phone.slice(7,9)}-${user.phone.slice(9,11)}`
-                            : user.phone
-                          }
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {/* УПРАВЛЕНИЕ ОЧЕРЕДЬЮ ТАЛОНОВ */}
-            <div className="space-y-4">
-              <h3 className="text-base font-black text-white">Живое продвижение очередей окошек</h3>
-              {myTickets.length === 0 ? (
-                <p className="text-slate-500 text-xs py-4 text-center bg-slate-900/30 border border-dashed border-slate-800 rounded-xl">Создайте талон на главной странице, чтобы увидеть его здесь в панели диспетчера.</p>
-              ) : (
-                <div className="bg-slate-950 border border-slate-800 rounded-xl divide-y divide-slate-900 text-xs">
-                  {myTickets.map(t => (
-                    <div key={t.id} className="p-4 flex justify-between items-center">
-                      <div>
-                        <span className="font-mono font-black text-cyan-400 text-sm block">{t.number}</span>
-                        <span className="text-slate-400 block text-[11px]">{t.orgName}</span>
-                      </div>
-                      <button 
-                        disabled={t.peopleAhead === 0}
-                        onClick={() => {
-                          setMyTickets(prev => prev.map(item => item.id === t.id ? { ...item, peopleAhead: Math.max(0, item.peopleAhead - 1) } : item))
-                          setSystemLogs(prev => [`Продвинута очередь по талону ${t.number}`, ...prev])
-                        }}
-                        className="bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600 hover:text-white px-3 py-1.5 rounded-lg font-bold text-[11px] transition-colors"
-                      >
-                        <FiTrendingDown className="inline mr-1" /> Принять следующего (-1)
-                      </button>
+              {/* Системный журнал */}
+              <div className="lg:col-span-4 bg-slate-950 border border-slate-800 rounded-2xl p-4 space-y-3 font-mono text-[11px]">
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-900 pb-2">
+                  Системный Журнал Ядра
+                </h4>
+                <div className="space-y-1.5 max-h-[300px] overflow-y-auto pr-1 text-slate-400 scrollbar-none">
+                  {systemLogs.map((log, index) => (
+                    <div key={index} className="p-1.5 rounded bg-slate-900/60 border border-slate-900 text-[10px] flex gap-2 items-start">
+                      <span className="text-indigo-500 font-bold">[{new Date().toLocaleTimeString()}]</span>
+                      <span className="break-all">{log}</span>
                     </div>
                   ))}
                 </div>
-              )}
+              </div>
             </div>
           </div>
         )}
-
       </main>
 
-      {/* МОДАЛКА ВЕРИФИКАЦИИ / РЕГИСТРАЦИИ С МАСКОЙ НОМЕРА */}
+      {/* ФУТЕР КАЗАХСТАНА */}
+      <footer className="bg-slate-950/80 border-t border-slate-900 py-6 text-center text-[10px] font-mono text-slate-500 tracking-wider">
+        © 2026 SmartQueue Ultimate v4.1. Разработано в городе Алматы. Все права защищены.
+      </footer>
+
+      {/* ОКОШКО ЧАТА ПОДДЕРЖКИ (ИИ-АССИСТЕНТ) */}
+      <div className="fixed bottom-5 right-5 z-40 flex flex-col items-end">
+        {isChatOpen && (
+          <div className="w-[320px] sm:w-[360px] h-[420px] bg-slate-900/95 backdrop-blur-md border border-indigo-500/20 rounded-2xl shadow-2xl flex flex-col justify-between overflow-hidden mb-3 animate-scale-up">
+            <div className="bg-indigo-950/60 border-b border-indigo-500/10 p-4 flex justify-between items-center">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div>
+                <div>
+                  <h4 className="text-xs font-black text-white uppercase tracking-wider">
+                    {isOperatorConnected ? 'Оператор: Асылжан' : 'ИИ-Ассистент'}
+                  </h4>
+                  <p className="text-[9px] text-slate-400 font-mono">Цифровой шлюз Алматы</p>
+                </div>
+              </div>
+              <button onClick={() => setIsChatOpen(false)} className="text-slate-400 hover:text-white p-1 bg-slate-950 rounded-lg"><FiX /></button>
+            </div>
+
+            <div className="flex-grow p-4 overflow-y-auto space-y-3 text-xs scrollbar-none">
+              {chatMessages.map(msg => (
+                <div key={msg.id} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`p-3 rounded-xl max-w-[85%] leading-relaxed ${msg.sender === 'user' ? 'bg-indigo-600 text-white rounded-br-none' : msg.sender === 'operator' ? 'bg-purple-600 text-white border border-purple-400/30 rounded-bl-none' : 'bg-slate-950 text-slate-300 rounded-bl-none'}`}>
+                    {msg.text}
+                  </div>
+                </div>
+              ))}
+              {isAiTyping && (
+                <div className="text-[10px] text-slate-500 font-mono italic animate-pulse">ИИ-ассистент печатает ответ...</div>
+              )}
+            </div>
+
+            <form onSubmit={handleSendMessage} className="p-3 bg-slate-950 border-t border-slate-900 flex gap-2">
+              <input 
+                type="text" 
+                value={userMessage}
+                onChange={(e) => setUserMessage(e.target.value)}
+                placeholder="Задайте ваш вопрос..." 
+                className="flex-grow bg-slate-900 border border-slate-800 rounded-xl px-3 text-xs text-white focus:outline-none focus:border-indigo-500"
+              />
+              <button type="submit" className="bg-indigo-600 text-white p-2.5 rounded-xl hover:bg-indigo-700 transition-all"><FiSend /></button>
+            </form>
+          </div>
+        )}
+
+        <button 
+          onClick={() => setIsChatOpen(!isChatOpen)}
+          className="w-12 h-12 bg-gradient-to-tr from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 rounded-full shadow-xl flex items-center justify-center text-white text-lg transition-all transform hover:scale-110 relative"
+        >
+          <FiMessageSquare />
+          {!isChatOpen && <span className="absolute top-0 right-0 w-3 h-3 bg-emerald-500 rounded-full border-2 border-[#0B0F19]"></span>}
+        </button>
+      </div>
+
+      {/* МОДАЛЬНОЕ ОКНО: РЕГИСТРАЦИЯ / ВХОД */}
       {showAuthModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-[#0F1322] border border-indigo-500/20 max-w-md w-full rounded-2xl p-6 space-y-4 relative animate-scale-up">
-            <button 
-              onClick={() => setShowAuthModal(false)} 
-              className="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors"
-            >
-              <FiX className="w-5 h-5" />
-            </button>
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-slate-900 border border-indigo-500/20 p-6 rounded-2xl space-y-4 relative overflow-hidden animate-scale-up">
+            <button onClick={() => setShowAuthModal(false)} className="absolute top-4 right-4 text-slate-400 hover:text-white p-1 bg-slate-950 rounded-lg"><FiX /></button>
+            
+            <div className="text-center">
+              <h3 className="text-lg font-black text-white uppercase tracking-wider">Единый шлюз авторизации</h3>
+              <p className="text-[11px] text-slate-400 mt-0.5">Введите ваш 12-значный ИИН для безопасного входа</p>
+            </div>
 
             {authStep === 1 ? (
-              <>
-                <div className="text-center space-y-1">
-                  <h3 className="text-lg font-black text-white flex items-center justify-center gap-2"><FiLock className="text-indigo-400" /> Верификация личности по ИИН</h3>
-                  <p className="text-slate-400 text-xs">При вводе ИИН Асылжана потребуется секретный пароль администратора.</p>
+              <form onSubmit={handleRegisterSubmit} className="space-y-3.5">
+                <div className="space-y-1">
+                  <label className="text-[10px] uppercase font-bold text-slate-400">ИИН гражданина (12 цифр):</label>
+                  <input 
+                    type="text" 
+                    required
+                    maxLength={12}
+                    value={regIin}
+                    onChange={(e) => setRegIin(e.target.value.replace(/\D/g, ''))}
+                    placeholder="Например: 060621501916" 
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs font-mono text-white focus:outline-none focus:border-indigo-500 transition-all"
+                  />
                 </div>
-                <form onSubmit={handleRegisterSubmit} className="space-y-3.5 text-xs">
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider mb-1">ИИН Гражданина (12 цифр)</label>
+
+                {/* Поле секретного пароля только для ИИН админа */}
+                {regIin === '060621501916' && (
+                  <div className="space-y-1 animate-scale-up bg-cyan-950/20 border border-cyan-500/20 p-3 rounded-xl">
+                    <label className="text-[10px] uppercase font-bold text-cyan-400 flex items-center gap-1">
+                      <FiLock /> Ключ Системного Администратора:
+                    </label>
                     <input 
-                      type="text" required placeholder="Введите 12 цифр ИИН" value={regIin}
-                      onChange={e => setRegIin(e.target.value.replace(/\D/g, '').slice(0, 12))}
-                      className="w-full bg-slate-950 border border-slate-800 p-3 rounded-xl text-white focus:outline-none focus:border-indigo-500 font-mono text-sm tracking-widest"
+                      type="password" 
+                      required
+                      value={regPassword}
+                      onChange={(e) => setRegPassword(e.target.value)}
+                      placeholder="Вставьте секретный пароль админа" 
+                      className="w-full bg-slate-950 border border-cyan-800 rounded-xl px-3 py-2.5 text-xs font-mono text-cyan-200 focus:outline-none focus:border-cyan-500 transition-all"
                     />
                   </div>
+                )}
 
-                  {/* ПОЛЕ ПАРОЛЯ — Показывается ТОЛЬКО если вводится ИИН Асылжана */}
-                  {regIin === ADMIN_CREDENTIALS.iin && (
-                    <div className="bg-cyan-950/20 border border-cyan-500/20 p-3 rounded-xl space-y-2">
-                      <label className="text-[10px] font-bold text-cyan-400 block uppercase tracking-wider">🔒 Секретный пароль администратора</label>
+                {/* Поля регистрации для обычных пользователей */}
+                {regIin !== '060621501916' && regIin.length === 12 && (
+                  <div className="space-y-3 animate-scale-up">
+                    <div className="space-y-1">
+                      <label className="text-[10px] uppercase font-bold text-slate-400">ФИО полностью (Только буквы):</label>
                       <input 
-                        type="password" required placeholder="Введите пароль доступа" value={regPassword}
-                        onChange={e => setRegPassword(e.target.value)}
-                        className="w-full bg-slate-950 border border-cyan-500/40 p-3 rounded-xl text-white focus:outline-none focus:border-cyan-400 font-mono"
+                        type="text" 
+                        required
+                        value={regName}
+                        onChange={handleNameChange}
+                        placeholder="Имя Фамилия" 
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-indigo-500 transition-all"
                       />
                     </div>
-                  )}
-
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider mb-1">ФИО (Только буквы)</label>
-                    <input 
-                      type="text" required placeholder="Например: Асылжан" value={regName}
-                      onChange={handleNameChange}
-                      className="w-full bg-slate-950 border border-slate-800 p-3 rounded-xl text-white focus:outline-none focus:border-indigo-500"
-                    />
-                  </div>
-
-                  {/* ИНПУТ С ЖЕСТКОЙ ВСТРОЕННОЙ МАСКОЙ НОМЕРА ТЕЛЕФОНА */}
-                  <div>
-                    <label className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider mb-1">Номер телефона</label>
-                    <input 
-                      type="text" 
-                      required 
-                      placeholder="+7 (700) 000-00-00" 
-                      value={getMaskedPhone(regPhone)}
-                      onChange={handlePhoneInputChange}
-                      className="w-full bg-slate-950 border border-slate-800 p-3 rounded-xl text-white focus:outline-none focus:border-indigo-500 font-mono text-sm"
-                    />
-                  </div>
-
-                  <button 
-                    type="submit"
-                    className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl transition-all uppercase tracking-wider"
-                  >
-                    Подтвердить и войти
-                  </button>
-                </form>
-              </>
-            ) : (
-              <div className="py-8 text-center space-y-4">
-                <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
-                <p className="text-xs text-slate-300 font-medium">Безопасное подключение к государственным реестрам...</p>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* МОДАЛКА ОПЛАТЫ */}
-      {showPaymentModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="bg-[#0F1322] border border-purple-500/20 max-w-md w-full rounded-2xl p-6 space-y-5 relative animate-scale-up">
-            <button onClick={() => setShowPaymentModal(false)} className="absolute top-4 right-4 text-slate-400 hover:text-white"><FiX className="w-5 h-5" /></button>
-            
-            {paymentStep === 1 ? (
-              <>
-                <div className="text-center">
-                  <h3 className="text-base font-black text-white uppercase tracking-wider">Шлюз безопасной оплаты</h3>
-                  <p className="text-xs text-slate-400 mt-1">Выберите удобный способ проведения транзакции</p>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <button 
-                    onClick={() => setPaymentMethod('qr')}
-                    className={`p-3 rounded-xl border flex flex-col items-center gap-2 text-xs font-bold transition-all ${paymentMethod === 'qr' ? 'border-purple-500 bg-purple-500/10 text-white' : 'border-slate-800 bg-slate-950 text-slate-400'}`}
-                  >
-                    <FiSmartphone className="w-5 h-5 text-purple-400" /> Kaspi QR Симулятор
-                  </button>
-                  <button 
-                    onClick={() => setPaymentMethod('card')}
-                    className={`p-3 rounded-xl border flex flex-col items-center gap-2 text-xs font-bold transition-all ${paymentMethod === 'card' ? 'border-purple-500 bg-purple-500/10 text-white' : 'border-slate-800 bg-slate-950 text-slate-400'}`}
-                  >
-                    <FiCreditCard className="w-5 h-5 text-indigo-400" /> Банковская карта
-                  </button>
-                </div>
-
-                {paymentMethod === 'qr' ? (
-                  <div className="bg-slate-950 border border-slate-800 p-4 rounded-xl text-center space-y-3">
-                    <div className="w-32 h-32 bg-white mx-auto rounded-lg flex items-center justify-center relative">
-                      <div className="absolute inset-2 border-4 border-slate-950"></div>
-                      <div className="w-6 h-6 bg-red-600 rounded flex items-center justify-center text-[10px] text-white font-black z-10">K</div>
-                    </div>
-                    <p className="text-[11px] text-slate-400">Нажмите кнопку ниже, чтобы сымитировать сканирование QR-кода.</p>
-                  </div>
-                ) : (
-                  <div className="space-y-3 text-xs">
-                    <div>
-                      <label className="text-[10px] font-bold text-slate-400 block mb-1">Номер карты</label>
-                      <input type="text" placeholder="4400 4300 0000 0000" value={cardNumber} onChange={e => setCardNumber(e.target.value)} className="w-full bg-slate-950 border border-slate-800 p-3 rounded-xl text-white focus:outline-none" />
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="text-[10px] font-bold text-slate-400 block mb-1">Срок действия</label>
-                        <input type="text" placeholder="MM/YY" value={cardExpiry} onChange={e => setCardExpiry(e.target.value)} className="w-full bg-slate-950 border border-slate-800 p-3 rounded-xl text-white focus:outline-none text-center" />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-bold text-slate-400 block mb-1">CVC/CVV</label>
-                        <input type="password" placeholder="***" maxLength={3} value={cardCvc} onChange={e => setCardCvc(e.target.value)} className="w-full bg-slate-950 border border-slate-800 p-3 rounded-xl text-white focus:outline-none text-center" />
-                      </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] uppercase font-bold text-slate-400">Номер телефона:</label>
+                      <input 
+                        type="text" 
+                        required
+                        value={getMaskedPhone(regPhone)}
+                        onChange={handlePhoneInputChange}
+                        placeholder="+7 (700) 952-23-06" 
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs font-mono text-white focus:outline-none focus:border-indigo-500 transition-all"
+                      />
                     </div>
                   </div>
                 )}
 
-                <button 
-                  onClick={handleProcessPayment}
-                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3.5 rounded-xl text-xs uppercase tracking-wider transition-all"
-                >
-                  Оплатить {selectedOrg ? calculatePrice(selectedOrg.avgTime) : 1000} ₸
+                <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl text-xs uppercase tracking-wider transition-all shadow-lg">
+                  Подтвердить шлюз ➔
                 </button>
-              </>
+              </form>
             ) : (
-              <div className="py-12 text-center space-y-4">
-                <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
-                <p className="text-xs text-slate-300 font-medium">Фиксация транзакции и эмиссия цифрового талона...</p>
+              <div className="text-center py-6 space-y-3">
+                <div className="w-8 h-8 rounded-full border-2 border-indigo-500 border-t-transparent animate-spin mx-auto"></div>
+                <p className="text-xs font-mono text-slate-400">Синхронизация токена безопасности с облаком Firebase...</p>
               </div>
             )}
           </div>
         </div>
       )}
 
-      {/* ПЛАВАЮЩИЙ ИИ-ЧАТ ПОДДЕРЖКИ С АСЫЛЖАНОМ */}
-      <div className="fixed bottom-6 right-6 z-50">
-        {isChatOpen ? (
-          <div className="w-80 h-96 bg-[#0F1322] border border-indigo-500/20 rounded-2xl shadow-2xl flex flex-col justify-between overflow-hidden animate-scale-up">
-            <div className="p-4 bg-indigo-950/60 border-b border-indigo-500/10 flex justify-between items-center">
-              <div className="flex items-center gap-2">
-                <div className={`w-2.5 h-2.5 rounded-full ${isOperatorConnected ? 'bg-cyan-400 animate-pulse' : 'bg-emerald-400'}`}></div>
-                <span className="text-xs font-bold text-white">{isOperatorConnected ? 'Служба поддержки' : 'ИИ-Ассистент SmartQueue'}</span>
-              </div>
-              <button onClick={() => setIsChatOpen(false)} className="text-slate-400 hover:text-white"><FiX className="w-4 h-4" /></button>
+      {/* МОДАЛЬНОЕ ОКНО: ОПЛАТА ТАЛОНА */}
+      {showPaymentModal && selectedOrg && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-slate-900 border border-indigo-500/20 p-6 rounded-2xl space-y-4 relative overflow-hidden animate-scale-up">
+            <button onClick={() => setShowPaymentModal(false)} className="absolute top-4 right-4 text-slate-400 hover:text-white p-1 bg-slate-950 rounded-lg"><FiX /></button>
+            
+            <div className="text-center">
+              <h3 className="text-base font-black text-white uppercase tracking-wider">Касса бронирования</h3>
+              <p className="text-[11px] text-slate-400 mt-0.5">К оплате: <span className="text-emerald-400 font-bold font-mono">{calculatePrice(selectedOrg.avgTime)} ₸</span></p>
             </div>
 
-            <div className="flex-grow p-4 overflow-y-auto space-y-3 scrollbar-none text-[11px]">
-              {chatMessages.map(m => (
-                <div key={m.id} className={`max-w-[85%] p-2.5 rounded-xl leading-relaxed ${m.sender === 'user' ? 'bg-indigo-600 text-white ml-auto rounded-tr-none' : m.sender === 'operator' ? 'bg-cyan-950/80 border border-cyan-500/30 text-cyan-200 rounded-tl-none' : 'bg-slate-900 text-slate-300 rounded-tl-none'}`}>
-                  {m.text}
+            {paymentStep === 1 ? (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-2 bg-slate-950 p-1 rounded-xl border border-slate-800">
+                  <button onClick={() => setPaymentMethod('qr')} className={`py-2 text-xs font-bold uppercase rounded-lg transition-all ${paymentMethod === 'qr' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}>Kaspi QR</button>
+                  <button onClick={() => setPaymentMethod('card')} className={`py-2 text-xs font-bold uppercase rounded-lg transition-all ${paymentMethod === 'card' ? 'bg-indigo-600 text-white' : 'text-slate-400'}`}>Банковская карта</button>
                 </div>
-              ))}
-              {isAiTyping && (
-                <div className="bg-slate-900 text-slate-400 max-w-[40%] p-2 rounded-xl rounded-tl-none animate-pulse">Печатает...</div>
-              )}
-            </div>
 
-            <form onSubmit={handleSendMessage} className="p-3 border-t border-indigo-500/10 bg-slate-950 flex gap-2">
-              <input 
-                type="text" placeholder="Введите ваш вопрос..." value={userMessage} onChange={e => setUserMessage(e.target.value)}
-                className="flex-grow bg-slate-900 border border-slate-800 p-2 rounded-xl text-[11px] text-white focus:outline-none"
-              />
-              <button type="submit" className="bg-indigo-600 text-white p-2 rounded-xl hover:bg-indigo-700 transition-colors"><FiSend /></button>
-            </form>
+                {paymentMethod === 'qr' ? (
+                  <div className="bg-slate-950 p-6 rounded-xl text-center space-y-3 border border-slate-800">
+                    <div className="w-36 h-36 bg-white mx-auto p-2 rounded-xl flex items-center justify-center relative group">
+                      <div className="absolute inset-0 bg-indigo-500/10 opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center font-mono text-[9px] font-bold text-indigo-400">МГНОВЕННЫЙ ШЛЮЗ</div>
+                      <div className="w-full h-full border-4 border-slate-950 flex flex-wrap p-1 gap-1">
+                        {[...Array(16)].map((_, i) => <div key={i} className={`flex-grow min-w-[20%] h-6 ${i % 3 === 0 || i % 7 === 0 ? 'bg-slate-950' : 'bg-transparent'}`}></div>)}
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-slate-400">Наведите камеру смартфона для подтверждения оплаты в приложении.</p>
+                    <button onClick={handleProcessPayment} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-xl text-xs uppercase tracking-wider transition-all">
+                      Я оплатил заявку
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="space-y-1">
+                      <label className="text-[10px] uppercase font-bold text-slate-400">Номер вашей карты:</label>
+                      <input 
+                        type="text" 
+                        maxLength={16}
+                        value={cardNumber}
+                        onChange={(e) => setCardNumber(e.target.value.replace(/\D/g, ''))}
+                        placeholder="4400 4300 5500 1122" 
+                        className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-indigo-500"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-[10px] uppercase font-bold text-slate-400">Срок (ММ/ГГ):</label>
+                        <input 
+                          type="text" 
+                          maxLength={4}
+                          value={cardExpiry}
+                          onChange={(e) => setCardExpiry(e.target.value.replace(/\D/g, ''))}
+                          placeholder="12/28" 
+                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-indigo-500"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] uppercase font-bold text-slate-400">CVC / CVV:</label>
+                        <input 
+                          type="password" 
+                          maxLength={3}
+                          value={cardCvc}
+                          onChange={(e) => setCardCvc(e.target.value.replace(/\D/g, ''))}
+                          placeholder="***" 
+                          className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-white focus:outline-none focus:border-indigo-500"
+                        />
+                      </div>
+                    </div>
+                    <button onClick={handleProcessPayment} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl text-xs uppercase tracking-wider transition-all">
+                      Оплатить и сгенерировать талон
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="text-center py-6 space-y-3">
+                <div className="w-8 h-8 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin mx-auto"></div>
+                <p className="text-xs font-mono text-slate-400">Формирование документа в распределенном реестре Firestore...</p>
+              </div>
+            )}
           </div>
-        ) : (
-          <button 
-            onClick={() => setIsChatOpen(true)}
-            className="w-14 h-14 bg-indigo-600 text-white rounded-full flex items-center justify-center shadow-lg shadow-indigo-600/30 hover:bg-indigo-700 transition-transform hover:scale-105"
-          >
-            <FiMessageSquare className="w-6 h-6" />
-          </button>
-        )}
-      </div>
-
+        </div>
+      )}
     </div>
   )
 }
